@@ -1,0 +1,62 @@
+Name
+Moksh
+Education
+Thadomal Shahani Engineering College, Mumbai, India Dec 2021 - May 2025
+B.E in Artificial Intelligence and Data Science CGPA: 8.38/10.0
+Technical Skills
+Ð Programming Languages:
+Å Cloud Security:
+ø Frontend Development:
+á Server & Backend Development:
+õ Database Stack:
+Ü Natural Language Processing:
+¡ Data Analysis:
+¥ Quality Assurance:
+ General Tools and Platforms:
+○ Python (PyTorch, TensorFlow, scikit-learn), Java, C++, R
+○ AWS (IAM, S3, EC2, Lambda), Google Cloud Platform (GCP), Azure
+○ ReactJS, JavaScript, HTML, CSS
+○ Django, REST APIs, Flask, NodeJS, ExpressJS, SSL/TLS, SSH
+○ MySQL, PostgreSQL, MongoDB, Encryption (AES, RSA)
+○ BERT, GPT, Spacy, NLTK, Autogen, MCP (Model Context Protocol)
+○ SQL, Tableau, Power BI, Data Cleaning, Data Visualization
+○ Automated Testing (Selenium, Jasmine, Playwright), Vulnerability Scanning
+○ GitHub, Docker, Linux, SDLC
+Experience
+Technopurple IT Solutions Pvt. Ltd Apr 2023 - Oct 2023
+Machine learning Engineer, Internship
+• Implemented a machine learning-based system that significantly enhanced ETA accuracy by 30% through regression
+and time series analysis, leveraging historical driver data for precise future predictions. (Python(pyexcel, Scikit Learn))
+• Automated data preprocessing and model training, simplifying processes for non-technical users. This facilitated
+seamless analysis and prediction via raw data input, ensuring efficiency in ETA estimation.
+• Developed a RESTful API to seamlessly integrate ETA prediction functionality with front-end applications, enabling
+real-time monitoring and decision-making. (Javascript, Flask)
+REVA Jewellery Mar 2022 - Jul 2022
+Software engineer, Internship
+• Boosted website speed by 60% using frontend optimization & caching. Deployed on AWS EC2 for 80% traffic increase
+(ReactJS, NodeJS)
+• Led website redesign with 100% client satisfaction gain through needs assessment & seamless integration. Increased
+SEO by 15-20 positions. (ReactJS, PHP, MySQL)
+Projects
+Image translation | GitHub | Python(PyTesseract), MongoDB, Html/CSS Jan 2023 - Jan 2023
+• Achieved a 95% success rate in accurately converting PDFs to images, performing OCR text extraction from images,
+and translating text from any language to English using OpenAI API. Developed a MongoDB-based library to store
+translated PDFs.
+Agentic AI for Industries | GitHub | Python, MCP, LLMs, GANs, Microsoft Azure Dec 2024 – Apr 2025
+• Developed an Agentic AI system using the Multi-Agent Collaboration Protocol (MCP) for industrial automation,
+integrating LLMs and GANs to enable predictive maintenance, investment scheme suggestions, intelligent data analysis,
+and dynamic policy summarization.
+• Deployed the solution on Microsoft Azure using Azure Machine Learning, Azure Functions, and Azure Blob Storage,
+ensuring scalable training, orchestration, and secure data management.
+AgriCart – AI-based E-Commerce | GitHub | MERN, Python, Azure, ETL, LLMs Jul 2023 – Dec 2023
+• Built an Azure-based ETL pipeline for agricultural data and developed a dynamic pricing algorithm to enable real-time
+vendor comparisons for better decision-making.
+• Created Dholu, an LLM-powered chatbot that assists farmers with queries and navigation, boosting platform recommendation, navigation and engagement by 35%.
+Certifications & Research Paper
+Certified Cloud Practitioner – AWS Link Completed: Apr 2025
+Data Scientist Certification – Micro1 Link Completed: Mar 2025
+AZ-900 Certification – Microsoft Link Completed: Jan 2025
+Research Paper: Multilayer Perceptron (MLP) for Anomaly Detection Link Submission: Sep 2024
+Machine Learning Specialization – Coursera (DeepLearning.AI, Stanford) Link Completed: Apr 2024
+Google Data Analytics Certificate – Coursera (Google) Link Completed: Mar 2023
+Scholarship (Excellent Performance) – Bluestar Link Received: Aug 2023

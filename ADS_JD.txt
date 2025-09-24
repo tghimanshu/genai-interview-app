@@ -1,0 +1,45 @@
+About the job
+Job Title: Associate Data Scientist
+
+Location: Mumbai
+
+Job Type: Full-time
+
+Experience: 0-6months
+
+About The Role
+
+We are seeking a highly motivated Associate Data Scientist with a strong passion for energy, technology, and data-driven decision-making. In this role, you will be responsible for developing and refining energy load forecasting models, analyzing customer demand patterns, and improving forecasting accuracy using advanced time series analysis and machine learning techniques. Your insights will directly support risk management, operational planning, and strategic decision-making across the company.
+
+If you thrive in a fast-paced, dynamic environment and enjoy solving complex data science challenges, we’d love to hear from you!
+
+Key Responsibilities
+
+Develop and enhance energy load forecasting models using time series forecasting, statistical modeling, and machine learning techniques. 
+Analyze historical and real-time energy consumption data to identify trends and improve forecasting accuracy. 
+Investigate discrepancies between forecasted and actual energy usage, providing actionable insights. 
+Automate data pipelines and forecasting workflows to streamline processes across departments. 
+Monitor day-over-day forecast variations and communicate key insights to stakeholders. 
+Work closely with internal teams and external vendors to refine forecasting methodologies. 
+Perform scenario analysis to assess seasonal patterns, anomalies, and market trends. 
+Continuously optimize forecasting models, leveraging techniques like ARIMA, Prophet, LSTMs, and regression-based models. 
+
+Qualifications & Skills
+
+0-6months of experience in data science, preferably in energy load forecasting, demand prediction, or a related field. 
+Strong expertise in time series analysis, forecasting algorithms, and statistical modeling. 
+Proficiency in Python, with experience using libraries such as pandas, NumPy, scikit-learn, statsmodels, and TensorFlow/PyTorch. 
+Experience working with SQL and handling large datasets. 
+Hands-on experience with forecasting models like ARIMA, SARIMA, Prophet, LSTMs, XGBoost, and random forests. 
+Familiarity with feature engineering, anomaly detection, and seasonality analysis. 
+Strong analytical and problem-solving skills with a data-driven mindset. 
+Excellent communication skills, with the ability to translate technical findings into business insights. 
+Ability to work independently and collaboratively in a fast-paced, dynamic environment. 
+Strong attention to detail, time management, and organizational skills. 
+
+Preferred Qualifications (Nice To Have)
+
+Experience working with energy market data, smart meter analytics, or grid forecasting. 
+Knowledge of cloud platforms (AWS) for deploying forecasting models. 
+Experience with big data technologies such as Spark or Hadoop.
+

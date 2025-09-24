@@ -1,0 +1,47 @@
+Himanshu Gohil
+himanshugohil234@gmail.com | +91 90822 33297 | Mumbai
+GitHub: tghimanshu | LinkedIn: tghimanshu | LeetCode: himanshu_gohil_12
+GenAI Specialist | Cloud Architect | Building Scalable AI & Automation Solutions for Business Impact
+
+WORK EXPERIENCE (3 Years)
+
+Google
+Project Management Apprentice (GenAI Specialist)
+Jul. 2023 - Jul. 2025, Mumbai
+* Prototyped 28 Product Solutions for showcasing Google Cloud & VertexAI Capabilities to Cloud Customers in the Retail, Automobile, and Media Industries using Python and NextJS.
+* Troubleshooting & Consulting for 6 Customers directly, including Shoppers Stop, Hoichoi, and Tata Motors, about Google Cloud Capabilities & Services.
+* Established Streamlined processes and dashboards for Revenue Forecasting & Cloud Blockers, providing visibility to 600+ Cloud Customers & $200M+ Impacted Revenue.
+* Contributed to Google's Internal Social Platform as a front-end engineer using Angular & integrating with Spring Boot.
+* Automated Processes across 11 teams to reduce human intervention by 95%
+
+Go Digital Technology Consulting Pvt. Ltd.
+Associate Software Engineer
+Jun. 2022 - Jul. 2023, Mumbai
+* Migrated on-premises Enterprise Web Applications, optimizing them to improve performance by 60% compared to on-premises performance
+* Modernized SharePoint site and workflows to the cloud, reducing manual intervention by 80% and increasing user satisfaction by 93%
+* Built Scalable Web Applications to support field teams, increasing their efficiency by 60% and visibility to potential field concerns by 40%
+* Awarded Client Communications Award for establishing deep relationships with client teams.
+
+CERTIFICATIONS, SKILLS & INTERESTS
+
+Certifications:
+* GCP Professional Cloud Architect
+* GCP Associate Cloud Engineer
+* GCP Cloud Digital Leader
+* Project Management Course - Google
+
+AI / GenAI: Vertex AI Platform, Agent Development Kit, AgentSpace, AI Studio, DialogFlow
+Cloud & DevOps: GCP, AWS, Firebase, Docker, Terraform, Gitlab CI, Github Actions
+Frontend: HTML5, CSS3, SASS, Bootstrap, Tailwind, JavaScript, TypeScript, Angular, React (NextJS)
+Backend & Automations: NodeJS (ExpressJS), Python (Flask, Streamlit), PHP, Apps Script
+Databases: MySQL, PostgreSQL, MongoDB, GoogleSQL
+Project & Process Management: Jira, Asana, Trello, Notion, Agile, Scrum
+Skills: Problem Solving; Strategic Thinking; Process Automation; GenAI Development;
+Languages: English, Hindi, Gujarati, Marathi, Japanese (Learning)
+
+EDUCATION
+
+Ghanshyamdas Saraf College
+Bachelor of Science, Information Technology
+2019 - 2022, Mumbai
+* SGPA: 9.32, Board of Studies (Alumni), Technical Fest Head
