@@ -40,6 +40,10 @@ import argparse
 from google import genai
 from google.genai import types
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 SEND_SAMPLE_RATE = 16000
@@ -61,9 +65,9 @@ face_cascade = cv2.CascadeClassifier('haarcascades\\haarcascade_frontalface_defa
 # read the haarcascade to detect the eyes in an image
 eye_cascade = cv2.CascadeClassifier('haarcascades\\haarcascade_eye_tree_eyeglasses.xml')
 
-with open("ADS_moksh_resume.txt", "r", encoding="utf-8") as f:
+with open("himanshu-resume.txt", "r", encoding="utf-8") as f:
     resume = f.read()
-with open("ADS_JD.txt", "r", encoding="utf-8") as f:
+with open("SDE_JD.txt", "r", encoding="utf-8") as f:
     jd = f.read()
 
 CONFIG = types.LiveConnectConfig(

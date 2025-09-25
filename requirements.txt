@@ -3,3 +3,5 @@ google-genai
 opencv-python
 flask
 pyaudio
+pillow
+mss
