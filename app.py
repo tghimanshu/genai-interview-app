@@ -37,75 +37,29 @@ import mss
 
 import argparse
 
-from google import genai
-from google.genai import types
-
-from dotenv import load_dotenv
-
-load_dotenv()
+from live_config import (
+    CONFIG,
+    MODEL,
+    RECEIVE_SAMPLE_RATE,
+    SEND_SAMPLE_RATE,
+    client,
+)
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-SEND_SAMPLE_RATE = 16000
-RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024
 
 # MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
-MODEL = "models/gemini-2.5-flash-live-preview"
 
 DEFAULT_MODE = "camera"
 
-client = genai.Client(
-    http_options={"api_version": "v1beta"},
-    api_key=os.environ.get("GEMINI_API_KEY", "<Enter your API key here>"),
-)
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+HAAR_DIR = BASE_DIR / "haarcascades"
 
-face_cascade = cv2.CascadeClassifier('haarcascades\\haarcascade_frontalface_default.xml')
+face_cascade = cv2.CascadeClassifier(str(HAAR_DIR / "haarcascade_frontalface_default.xml"))
 
 # read the haarcascade to detect the eyes in an image
-eye_cascade = cv2.CascadeClassifier('haarcascades\\haarcascade_eye_tree_eyeglasses.xml')
-
-with open("himanshu-resume.txt", "r", encoding="utf-8") as f:
-    resume = f.read()
-with open("SDE_JD.txt", "r", encoding="utf-8") as f:
-    jd = f.read()
-
-CONFIG = types.LiveConnectConfig(
-    system_instruction=f"""
-    You are ALEX. YOU HAVE A VERY IMPORTANT JOB OF Conducting Interviews for the provided Job Description.
-
-YOU ARE ON CALL WITH INTERVIEWEE MENTIONED IN THE RESUME
-
-YOUR AIM IS TO CONDUCT AN ENGAGING INTERVIEW TO ASSESS INTERVIEWW IN THE APPROPRIATE SKILLS.
-
-BE POLITE AND FRIENDLY. DO NOT BE RUDE OR IMPOLITE. GUIDE HIMANSHU IF HE GETS STUCK BUT BE CAREFUL NOT TO GIVE AWAY TOO MUCH INFORMATION.
-DO NOT INTERRUPT HIM WHEN HE IS SPEAKING.
-AVOID USING COMPLEX JARGON OR TECHNICAL TERMS THAT HE MAY NOT UNDERSTAND.
-DO NOT STRAY FROM THE INTERVIEW QUESTIONS
-
-PLEASE SPEAK IN ENGLISH LANGUAGE IN AMERICAN ACCENT
-
-WHEN THE INTERVIEW IS OVER OR REJECTED SAY "I hope you have a great day!"
-
-JOB DESCRIPTION: ```{jd}```
-RESUME: ```{resume}```
-""",
-    response_modalities=[
-        "AUDIO",
-    ],
-    media_resolution="MEDIA_RESOLUTION_MEDIUM",
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Zephyr")
-        )
-    ),
-    context_window_compression=types.ContextWindowCompressionConfig(
-        trigger_tokens=25600,
-        sliding_window=types.SlidingWindow(target_tokens=12800),
-    ),
-    input_audio_transcription={},
-    output_audio_transcription={}
-)
+eye_cascade = cv2.CascadeClassifier(str(HAAR_DIR / "haarcascade_eye_tree_eyeglasses.xml"))
 
 pya = pyaudio.PyAudio()
 

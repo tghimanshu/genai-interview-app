@@ -5,3 +5,6 @@ flask
 pyaudio
 pillow
 mss
+fastapi
+uvicorn[standard]
+numpy

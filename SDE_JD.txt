@@ -1,44 +1,33 @@
-Designation – Data Engineer (Engineer & Senior Engineer Level) 
+Role Overview
+The Generative AI Specialist will be a key member of our AI development team, responsible for designing, developing, and deploying cutting-edge applications powered by Large Language Models (LLMs) and other generative technologies. You will work on a variety of projects, from creating novel customer-facing features to building internal tools that enhance productivity. This role requires a deep understanding of GenAI concepts, strong programming skills, and a passion for staying on the leading edge of this rapidly evolving field.
 
-Location: Remote (across India) 
+Key Responsibilities
+Design and Development: Architect, build, and maintain scalable and robust applications leveraging generative AI models (LLMs, diffusion models, etc.).
 
-Experience: 3 to 8 years 
+Prompt Engineering: Develop and refine sophisticated prompt engineering strategies to elicit accurate, relevant, and safe outputs from foundation models.
 
- 
+Model Integration & Fine-Tuning: Integrate proprietary and third-party foundation models (e.g., Google's Gemini, OpenAI's GPT series, open-source models) into our application stack. Fine-tune smaller, open-source models on custom datasets for specific tasks.
 
-Technologies / Skills: 
+RAG Implementation: Design and implement Retrieval-Augmented Generation (RAG) pipelines, utilizing vector databases (e.g., Pinecone, Chroma, Vertex AI Vector Search) to ground models in factual, up-to-date information.
 
-Strong hands-on experience with AWS data engineering services (ETL, orchestration, and streaming tools. 
-Proficiency in SQL, Python (Pandas, NumPy) and PySpark. 
-Experience in ETL/ELT pipeline development, data modeling and working with large-scale data systems. 
-Familiarity with CI/CD workflows, Git and version control practices. 
- 
+Prototyping & PoCs: Create rapid prototypes and proofs-of-concept to demonstrate the potential of new GenAI solutions to stakeholders and product teams, much like in a demo creation environment.
 
-Responsibilities: 
+Evaluation & Optimization: Establish metrics and evaluation frameworks to assess model performance, quality, and cost. Optimize applications for latency, throughput, and resource consumption.
 
-Collaborate with business stakeholders and technical teams to gather requirements and translate them into scalable data solutions. 
-Design, build and maintain robust, secure, high-performance data pipelines 
-Ensure adherence to data quality, governance and compliance standards 
-Work with architects and engineering leads to follow best practices and optimize for performance 
-Communicate insights and technical decisions effectively with cross-functional stakeholders 
-Participate in Agile ceremonies and deliver iterative improvements in data infrastructure 
- 
+Collaboration: Work closely with cross-functional teams, including product managers, data scientists, and software engineers, to translate business requirements into technical solutions.
 
-Required Qualifications: 
+Research & Innovation: Stay at the forefront of GenAI research, trends, and best practices, and champion the adoption of new technologies and techniques within the organization.
 
-3+ years of hands-on experience with AWS data engineering services, including: 
-AWS Glue, Athena, EMR, Redshift, Lambda, Kinesis, S3, Step Functions, CloudWatch. 
-Expertise in building data pipelines using PySpark/Spark SQL. 
-Strong SQL and Python skills with experience in large-scale data transformation and ingestion. 
-Knowledge of Spark internals (joins, partitioning, memory management) and performance tuning via Spark UI. 
-Experience with Git, CI/CD pipelines, and working in Agile environments. 
-Understanding of partitioning, schema design, and query performance optimization. 
- 
+Required Qualifications
+Bachelor's degree in Computer Science, Artificial Intelligence, Machine Learning, or a related technical field.
 
-Desired Qualifications: 
+3+ years of hands-on experience in software development or machine learning.
 
-Experience with workflow orchestration tools like Apache Airflow or AWS Step Functions. 
-Exposure to streaming platforms such as Kafka, Kinesis etc . 
-Working knowledge of AWS SDKs (e.g., Boto3) for automation and integration. 
-Familiarity with modern ETL/ELT patterns and data modeling techniques. 
-Basic proficiency in shell scripting for automation and support tasks. 
+Proven proficiency in Python and its core data science/ML libraries (e.g., Pandas, NumPy, Scikit-learn, TensorFlow, PyTorch).
+
+Demonstrable experience working with LLMs via APIs (e.g., Google Gemini API, OpenAI API, etc.).
+
+Solid understanding of core GenAI concepts, including transformers, embeddings, vector databases, and RAG architecture.
+
+Excellent problem-solving skills and the ability to work independently and in a team environment.
+
