@@ -49,8 +49,6 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 CHUNK_SIZE = 1024
 
-# MODEL = "models/gemini-2.5-flash-preview-native-audio-dialog"
-
 DEFAULT_MODE = "camera"
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
@@ -124,12 +122,10 @@ class AudioLoop:
 
         faces = face_cascade.detectMultiScale(gray, 1.3, 4)
         eyes = eye_cascade.detectMultiScale(gray, 1.3, 4)
-        print('Number of detected eyes:', len(eyes))
         if len(faces) >= 1:
             self.looked_away = 0
         if len(faces) < 1:
             self.looked_away += 1
-        # print('Number of detected faces:', len(faces), 'Looked away count:', self.looked_away)
         cv2.imshow("frame", frame)
 
 

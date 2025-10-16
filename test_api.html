@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        button { margin: 5px; padding: 8px 16px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>API Endpoint Testing</h1>
+    <div id="results"></div>
+    
+    <button onclick="testHealth()">Test Health</button>
+    <button onclick="testJobs()">Test Jobs</button>
+    <button onclick="testResumes()">Test Resumes</button>
+    <button onclick="testInterviews()">Test Interviews</button>
+    
+    <script>
+        const baseUrl = 'http://127.0.0.1:8000';
+        
+        function addResult(test, success, message) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${success ? 'success' : 'error'}`;
+            div.innerHTML = `<strong>${test}:</strong> ${message}`;
+            results.appendChild(div);
+        }
+        
+        async function testEndpoint(endpoint, testName) {
+            try {
+                const response = await fetch(`${baseUrl}${endpoint}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(testName, true, `✅ Success - ${JSON.stringify(data).substring(0, 100)}...`);
+                } else {
+                    addResult(testName, false, `❌ HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                addResult(testName, false, `❌ Error: ${error.message}`);
+            }
+        }
+        
+        function testHealth() {
+            testEndpoint('/health', 'Health Check');
+        }
+        
+        function testJobs() {
+            testEndpoint('/api/jobs', 'Jobs List');
+        }
+        
+        function testResumes() {
+            testEndpoint('/api/resumes', 'Resumes List');
+        }
+        
+        function testInterviews() {
+            testEndpoint('/api/interviews', 'Interviews List');
+        }
+        
+        // Auto test on load
+        window.onload = function() {
+            setTimeout(() => {
+                testHealth();
+                setTimeout(() => testJobs(), 1000);
+                setTimeout(() => testResumes(), 2000);
+                setTimeout(() => testInterviews(), 3000);
+            }, 500);
+        };
+    </script>
+</body>
+</html>

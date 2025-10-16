@@ -189,6 +189,7 @@ CREATE VIEW interview_summary AS
 SELECT 
     i.id as interview_id,
     i.session_id,
+    i.interview_link,
     i.status,
     jd.title as job_title,
     jd.company,

@@ -8,3 +8,9 @@ mss
 fastapi
 uvicorn[standard]
 numpy
+aiortc
+websockets
+python-multipart
+google-api-python-client 
+google-auth-httplib2 
+google-auth-oauthlib

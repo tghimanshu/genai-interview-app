@@ -7,6 +7,7 @@ if __name__ == "__main__":
         "server:app",
         host="127.0.0.1",
         port=8000,
-        reload=True,
+        # Disable reload for stable test runs; use reload=True only during active development.
+        reload=False,
         log_level="info"
     )

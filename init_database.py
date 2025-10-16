@@ -26,8 +26,8 @@ class DatabaseManager:
         Args:
             db_path: Path to SQLite database file
         """
-        if not os.path.exists("db"):
-            os.makedirs("db")
+        if not os.path.exists(os.path.dirname(db_path)):
+            os.makedirs(os.path.dirname(db_path))
         self.db_path = db_path
         self.base_dir = Path(__file__).parent
         self.schema_path = self.base_dir / "database_schema.sql"
@@ -175,7 +175,7 @@ class DatabaseManager:
         """
         if not backup_path:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"interview_database_backup_{timestamp}.db"
+            backup_path = f"db/interview_database_backup_{timestamp}.db"
         
         try:
             import shutil

@@ -8,11 +8,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    Response,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketState
 from pydantic import BaseModel
+from utils.email_utils import send_email
+from convert_resume_to_text import convert_resume_to_txt
 
 import cv2
 import numpy as np
@@ -28,7 +40,9 @@ from live_config import (
     build_live_config,
     client,
 )
-from enhanced_ai_config import get_enhanced_ai_config, get_interview_questions_by_role
+from enhanced_ai_config import get_enhanced_ai_config
+
+# WebRTC imports handled separately to avoid circular imports
 
 # Setup logging first
 logger = logging.getLogger(__name__)
@@ -36,11 +50,20 @@ logging.basicConfig(level=logging.INFO)
 
 # Import database operations
 try:
-    from database_operations import InterviewDatabaseOps, JobDescription, Resume, Interview
+    from database_operations import (
+        InterviewDatabaseOps,
+        JobDescription,
+        Resume,
+        Interview,
+    )
+
     DATABASE_AVAILABLE = True
 except ImportError:
     DATABASE_AVAILABLE = False
-    logger.warning("Database operations not available - database_operations.py not found")
+    logger.warning(
+        "Database operations not available - database_operations.py not found"
+    )
+
 
 # Pydantic models for API requests
 class JobDescriptionCreate(BaseModel):
@@ -53,6 +76,7 @@ class JobDescriptionCreate(BaseModel):
     location: Optional[str] = None
     salary_range: Optional[str] = None
 
+
 class ResumeCreate(BaseModel):
     candidate_name: str
     email: Optional[str] = None
@@ -62,11 +86,13 @@ class ResumeCreate(BaseModel):
     education: Optional[str] = None
     experience_years: Optional[int] = None
 
+
 class InterviewCreate(BaseModel):
     job_description_id: int
     resume_id: int
     session_id: str
     duration_minutes: Optional[int] = None
+
 
 FINAL_SIGNOFF_PHRASES = (
     "i hope you have a great day",
@@ -75,6 +101,9 @@ FINAL_SIGNOFF_PHRASES = (
 )
 
 app = FastAPI(title="Live Interview API")
+
+# Add compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,31 +118,39 @@ app.add_middleware(
 async def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
 
+
 @app.get("/")
 async def home() -> Dict[str, str]:
     return {"status": "ok"}
 
+
 # Database API Endpoints
+
 
 # Job Descriptions
 @app.get("/api/jobs")
-async def get_job_descriptions():
+async def get_job_descriptions(response: Response):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         jobs = db_ops.list_job_descriptions(active_only=True)
+
+        # Add caching headers for better performance
+        response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
+
         return {"jobs": jobs}
     except Exception as e:
         logger.error(f"Error fetching job descriptions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/jobs")
 async def create_job_description(job_data: JobDescriptionCreate):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         # Create JobDescription dataclass object
@@ -125,7 +162,7 @@ async def create_job_description(job_data: JobDescriptionCreate):
             skills_required=job_data.skills_required,
             experience_level=job_data.experience_level,
             location=job_data.location,
-            salary_range=job_data.salary_range
+            salary_range=job_data.salary_range,
         )
         job_id = db_ops.create_job_description(job_desc)
         return {"id": job_id, "message": "Job description created successfully"}
@@ -133,11 +170,12 @@ async def create_job_description(job_data: JobDescriptionCreate):
         logger.error(f"Error creating job description: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/jobs/{job_id}")
 async def get_job_description(job_id: int):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         job = db_ops.get_job_description(job_id)
@@ -148,25 +186,31 @@ async def get_job_description(job_id: int):
         logger.error(f"Error fetching job description {job_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Resumes/Candidates
 @app.get("/api/resumes")
-async def get_resumes():
+async def get_resumes(response: Response):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         resumes = db_ops.list_resumes(active_only=True)
+
+        # Add caching headers for better performance
+        response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
+
         return {"resumes": resumes}
     except Exception as e:
         logger.error(f"Error fetching resumes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/resumes")
 async def create_resume(resume_data: ResumeCreate):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         # Create Resume dataclass object
@@ -177,7 +221,7 @@ async def create_resume(resume_data: ResumeCreate):
             resume_text=resume_data.resume_text,
             skills=resume_data.skills,
             education=resume_data.education,
-            experience_years=resume_data.experience_years
+            experience_years=resume_data.experience_years,
         )
         resume_id = db_ops.create_resume(resume)
         return {"id": resume_id, "message": "Resume created successfully"}
@@ -185,11 +229,80 @@ async def create_resume(resume_data: ResumeCreate):
         logger.error(f"Error creating resume: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/resumes/upload")
+async def upload_resume(
+    candidate_name: str = Form(...),
+    email: Optional[str] = Form(None),
+    resume_file: UploadFile = File(...),
+):
+    """Upload a resume file and create a resume record.
+    - text files will be read into resume_text
+    - other files (pdf, docx) will be stored and path saved in resume_pdf_path
+    """
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        # Save uploaded file
+        uploads_dir = Path(BASE_DIR) / "uploads" / "resumes"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+
+        # sanitize filename
+        original_name = Path(resume_file.filename).name
+        unique_name = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{original_name}"
+        dest_path = uploads_dir / unique_name
+
+        content = await resume_file.read()
+        with open(dest_path, "wb") as f:
+            f.write(content)
+
+        # If text-like, decode into resume_text
+        details = None
+        # TODO: Convert Resume to text and create resume
+        try:
+            # if resume_file.content_type and resume_file.content_type.startswith("text"):
+            #     resume_text = content.decode("utf-8", errors="ignore")
+            details = convert_resume_to_txt(dest_path)
+        except Exception as e:
+            resume_text = None
+
+        # Create resume record
+        db_ops = InterviewDatabaseOps()
+        if details:
+            resume = Resume(
+                candidate_name=details.get("candidate_name"),
+                resume_text=details.get("resume_text", ""),
+                email=details.get("email"),
+                resume_pdf_path=str(dest_path),
+                phone=details.get("phone"),
+                skills=details.get("skills"),
+                education=details.get("education"),
+                experience_years=details.get("experience_years"),
+                certifications=details.get("certifications"),
+                linkedin_url=details.get("linkedin_url"),
+                portfolio_url=details.get("portfolio_url"),
+            )
+        # resume = Resume(
+        #     candidate_name=candidate_name,
+        #     resume_text=resume_text or "",
+        #     email=email,
+        #     resume_pdf_path=str(dest_path),
+        # )
+        resume_id = db_ops.create_resume(resume)
+
+        return {"id": resume_id, "message": "Resume uploaded and created successfully"}
+
+    except Exception as e:
+        logger.error(f"Error uploading resume: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/resumes/{resume_id}")
 async def get_resume(resume_id: int):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         resume = db_ops.get_resume(resume_id)
@@ -200,12 +313,13 @@ async def get_resume(resume_id: int):
         logger.error(f"Error fetching resume {resume_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Interviews
 @app.get("/api/interviews")
 async def get_interviews():
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         # Get all interviews
@@ -215,11 +329,12 @@ async def get_interviews():
         logger.error(f"Error fetching interviews: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/interviews")
 async def create_interview(interview_data: InterviewCreate):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         # Create Interview dataclass object
@@ -228,19 +343,28 @@ async def create_interview(interview_data: InterviewCreate):
             resume_id=interview_data.resume_id,
             session_id=interview_data.session_id,
             duration_minutes=interview_data.duration_minutes,
-            status="scheduled"  # Set default status
+            interview_link=f"http://localhost:5173/interview/{interview_data.session_id}",
+            status="scheduled",  # Set default status
         )
+        resume = db_ops.get_resume(interview_data.resume_id)  # Verify resume exists
         interview_id = db_ops.create_interview(interview)
+        if interview_id:
+            send_email(
+                recipients=[resume.get("email")],
+                subject="Interview Scheduled",
+                body=f"Your interview has been scheduled successfully. Join here: {interview.interview_link}"
+            )
         return {"id": interview_id, "message": "Interview created successfully"}
     except Exception as e:
         logger.error(f"Error creating interview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/interviews/{interview_id}")
 async def get_interview_details(interview_id: int):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         interview_details = db_ops.get_interview_full_results(interview_id)
@@ -251,11 +375,12 @@ async def get_interview_details(interview_id: int):
         logger.error(f"Error fetching interview details {interview_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/interviews/{interview_id}/results")
 async def get_interview_results(interview_id: int):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
         interview_summary = db_ops.get_interview_summary(interview_id)
@@ -266,43 +391,360 @@ async def get_interview_results(interview_id: int):
         logger.error(f"Error fetching interview results {interview_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Analytics
 @app.get("/api/analytics/stats")
 async def get_analytics_stats():
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         db_ops = InterviewDatabaseOps()
-        
+
         # Get basic counts using existing methods
         all_jobs = db_ops.list_job_descriptions(active_only=False)
         all_resumes = db_ops.list_resumes(active_only=False)
         all_interviews = db_ops.list_interviews()  # Get all interviews
-        all_scores = db_ops.get_all_interview_results()['final_score']
-        
+        all_scores = db_ops.get_all_interview_results()["final_score"]
+
         # Calculate stats
         total_jobs = len(all_jobs)
         total_candidates = len(all_resumes)
         total_interviews = len(all_interviews)
-        
+
         # Simple average score calculation
         # avg_score = 7.5  # Default placeholder
-        avg_score = sum(score["final_score"] for score in all_scores) / len(all_scores) if all_scores else 0
-        
+        avg_score = (
+            sum(score["final_score"] for score in all_scores) / len(all_scores)
+            if all_scores
+            else 0
+        )
+
         return {
             "totalJobs": total_jobs,
             "totalCandidates": total_candidates,
             "totalInterviews": total_interviews,
-            "averageScore": avg_score
+            "averageScore": avg_score,
         }
     except Exception as e:
         logger.error(f"Error fetching analytics stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# UPDATE endpoints
+@app.put("/api/jobs/{job_id}")
+async def update_job_description(job_id: int, job_data: JobDescriptionCreate):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        # Convert Pydantic model to dict for update
+        updates = job_data.model_dump(exclude_none=True)
+
+        success = db_ops.update_job_description(job_id, updates)
+        if not success:
+            raise HTTPException(status_code=404, detail="Job description not found")
+
+        # Return updated job
+        updated_job = db_ops.get_job_description(job_id)
+        return {"job": updated_job}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating job description: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/resumes/{resume_id}")
+async def update_resume(resume_id: int, resume_data: ResumeCreate):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        # Convert Pydantic model to dict for update
+        updates = resume_data.model_dump(exclude_none=True)
+
+        # Update resume in database (need to implement update_resume method)
+        query = """
+        UPDATE resumes 
+        SET candidate_name = ?, email = ?, phone = ?, resume_text = ?,
+            skills = ?, experience_years = ?, education = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """
+
+        params = (
+            updates.get("candidate_name"),
+            updates.get("email"),
+            updates.get("phone"),
+            updates.get("resume_text"),
+            updates.get("skills"),
+            updates.get("experience_years"),
+            updates.get("education"),
+            resume_id,
+        )
+
+        success = db_ops.db_manager.execute_update(query, params)
+        if not success:
+            raise HTTPException(status_code=404, detail="Resume not found")
+
+        # Return updated resume
+        updated_resume = db_ops.get_resume(resume_id)
+        return {"resume": updated_resume}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating resume: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/interviews/{interview_id}/status")
+async def update_interview_status(interview_id: int, status_data: dict):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        status = status_data.get("status")
+        if not status:
+            raise HTTPException(status_code=400, detail="Status is required")
+
+        success = db_ops.update_interview_status(interview_id, status)
+        if not success:
+            raise HTTPException(status_code=404, detail="Interview not found")
+
+        # Return updated interview
+        updated_interview = db_ops.get_interview(interview_id)
+
+        # If interview completed, attempt to send notification email
+        try:
+            if status == "completed":
+                # Fetch resume email if available
+                resume = (
+                    db_ops.get_resume(updated_interview["resume_id"])
+                    if updated_interview
+                    else None
+                )
+                candidate_email = resume.get("email") if resume else None
+                session = (
+                    updated_interview.get("session_id") if updated_interview else None
+                )
+                if candidate_email and session:
+                    interview_link = (
+                        f"{"http://localhost:5173"}/interview?session={session}"
+                    )
+                    subject = "Your Interview has completed"
+                    body = f"Your interview session ({session}) is completed. Access details: {interview_link}"
+                    send_email(subject, body, [candidate_email])
+        except Exception as e:
+            logger.error(f"Failed to send completion email: {e}")
+        return {"interview": updated_interview}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating interview status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/interviews/{interview_id}")
+async def update_interview(interview_id: int, updates: dict):
+    """Update arbitrary interview fields (scheduled_at, duration_minutes, interviewer_notes, etc.)"""
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        # Validate allowed keys to prevent accidental schema changes
+        allowed_keys = {
+            "scheduled_at",
+            "started_at",
+            "ended_at",
+            "duration_minutes",
+            "interviewer_notes",
+            "candidate_feedback",
+            "status",
+        }
+
+        filtered_updates = {k: v for k, v in updates.items() if k in allowed_keys}
+        if not filtered_updates:
+            raise HTTPException(
+                status_code=400, detail="No valid update fields provided"
+            )
+
+        success = db_ops.update_interview(interview_id, filtered_updates)
+        if not success:
+            raise HTTPException(
+                status_code=404, detail="Interview not found or update failed"
+            )
+
+        updated = db_ops.get_interview(interview_id)
+        return {"interview": updated}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating interview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# DELETE endpoints
+@app.delete("/api/jobs/{job_id}")
+async def delete_job_description(job_id: int):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        # Soft delete by setting is_active = False
+        success = db_ops.update_job_description(job_id, {"is_active": False})
+        if not success:
+            raise HTTPException(status_code=404, detail="Job description not found")
+
+        return {"message": "Job description deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting job description: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/resumes/{resume_id}")
+async def delete_resume(resume_id: int):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+        # Soft delete by setting is_active = False to avoid violating FK constraints
+        query = "UPDATE resumes SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        success = db_ops.db_manager.execute_update(query, (resume_id,))
+        if not success:
+            raise HTTPException(status_code=404, detail="Resume not found")
+
+        return {"message": "Resume deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting resume: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# SEARCH endpoints
+@app.get("/api/search/candidates")
+async def search_candidates(q: str):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+        candidates = db_ops.search_candidates(q)
+        return {"candidates": candidates}
+
+    except Exception as e:
+        logger.error(f"Error searching candidates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/search/jobs")
+async def search_jobs(q: str):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        # Search jobs by title or company
+        query = """
+        SELECT * FROM job_descriptions 
+        WHERE (title LIKE ? OR company LIKE ?) AND is_active = 1
+        ORDER BY title
+        """
+
+        term = f"%{q}%"
+        rows = db_ops.db_manager.execute_query(query, (term, term))
+        jobs = [dict(row) for row in rows] if rows else []
+
+        return {"jobs": jobs}
+
+    except Exception as e:
+        logger.error(f"Error searching jobs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# MATCH RATING endpoints
+@app.post("/api/match-rating")
+async def create_match_rating(rating_data: dict):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+
+        job_id = rating_data.get("job_description_id")
+        resume_id = rating_data.get("resume_id")
+        score = rating_data.get("overall_score")
+        reasoning = rating_data.get("reasoning", "")
+
+        if not all([job_id, resume_id, score]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        rating_id = db_ops.create_match_rating(
+            job_id,
+            resume_id,
+            score,
+            reasoning,
+            rating_data.get("detailed_analysis"),
+            rating_data.get("model_version"),
+        )
+
+        if not rating_id:
+            raise HTTPException(status_code=500, detail="Failed to create match rating")
+
+        return {"match_rating_id": rating_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating match rating: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/match-rating/{job_id}/{resume_id}")
+async def get_match_rating(job_id: int, resume_id: int):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+        rating = db_ops.get_match_rating(job_id, resume_id)
+
+        if not rating:
+            raise HTTPException(status_code=404, detail="Match rating not found")
+
+        return {"match_rating": rating}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting match rating: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class WebSocketInterviewSession:
-    def __init__(self, websocket: WebSocket, resume_handle: Optional[str] = None) -> None:
+    def __init__(
+        self, websocket: WebSocket, resume_handle: Optional[str] = None
+    ) -> None:
         self.websocket = websocket
         self.session = None
         self._tasks = []
@@ -336,19 +778,29 @@ class WebSocketInterviewSession:
         try:
             # Build enhanced AI configuration
             session_context = {
-                'session_id': self._session_id,
-                'interview_type': 'Technical Screen',
-                'timestamp': datetime.utcnow().isoformat()
+                "session_id": self._session_id,
+                "interview_type": "Technical Screen",
+                "timestamp": datetime.utcnow().isoformat(),
             }
-            
+
             # Use enhanced config from enhanced_ai_config.py if available
             try:
-                enhanced_prompt = get_enhanced_ai_config(
-                    self._job_description_text,
-                    self._resume_text,
-                    session_context
-                )
-                
+                # Get context from web socket with type 'context' message
+                while True:
+                    message = await self.websocket.receive_json()
+                    if message.get("type") == "context":
+                        # session_context.update(message.get("context", {}))
+                        enhanced_prompt = get_enhanced_ai_config(
+                            message.get(
+                                "jobDescriptionText", self._job_description_text
+                            ),
+                            message.get("resumeText", self._resume_text),
+                            # self._job_description_text,
+                            # self._resume_text,
+                            session_context,
+                        )
+                        break
+
                 config = build_live_config(
                     self._resume_handle,
                     resume_text=self._resume_text,
@@ -357,7 +809,7 @@ class WebSocketInterviewSession:
                 )
                 # Override with enhanced system instruction
                 config.system_instruction = enhanced_prompt
-                
+
             except ImportError:
                 # Fallback to standard config with session context
                 config = build_live_config(
@@ -368,14 +820,20 @@ class WebSocketInterviewSession:
                 )
 
             try:
-                async with client.aio.live.connect(model=MODEL, config=config) as session:
+                async with client.aio.live.connect(
+                    model=MODEL, config=config
+                ) as session:
                     self.session = session
-                    logger.info(f"Successfully connected to Gemini Live API for session {self._session_id}")
+                    logger.info(
+                        f"Successfully connected to Gemini Live API for session {self._session_id}"
+                    )
 
                     await session.send_client_content(
                         turns={
                             "role": "user",
-                            "parts": [{"text": "--SYSTEM-- Candidate Joined the call."}],
+                            "parts": [
+                                {"text": "--SYSTEM-- Candidate Joined the call."}
+                            ],
                         },
                         turn_complete=True,
                     )
@@ -404,27 +862,33 @@ class WebSocketInterviewSession:
 
                     for task in done:
                         task.result()
-                        
+
             except Exception as api_error:
                 logger.error(f"Error connecting to Gemini Live API: {api_error}")
-                
+
                 # Send error message to client
                 if self.websocket.client_state == WebSocketState.CONNECTED:
-                    await self.websocket.send_json({
-                        "type": "error",
-                        "error": "Failed to connect to AI service. Please try again.",
-                        "details": str(api_error)
-                    })
-                    
+                    await self.websocket.send_json(
+                        {
+                            "type": "error",
+                            "error": "Failed to connect to AI service. Please try again.",
+                            "details": str(api_error),
+                        }
+                    )
+
                 # If it's a session handle error, suggest starting fresh
                 if "Invalid session handle" in str(api_error):
-                    logger.warning("Invalid session handle detected, client should start new session")
+                    logger.warning(
+                        "Invalid session handle detected, client should start new session"
+                    )
                     if self.websocket.client_state == WebSocketState.CONNECTED:
-                        await self.websocket.send_json({
-                            "type": "session_expired",
-                            "message": "Session expired. Please start a new interview."
-                        })
-                
+                        await self.websocket.send_json(
+                            {
+                                "type": "session_expired",
+                                "message": "Session expired. Please start a new interview.",
+                            }
+                        )
+
                 raise api_error
         finally:
             logger.info(
@@ -455,7 +919,9 @@ class WebSocketInterviewSession:
         assistant_path = self._recordings_dir / f"{self._session_prefix}_assistant.wav"
         candidate_path = self._recordings_dir / f"{self._session_prefix}_candidate.wav"
         mix_path = self._recordings_dir / f"{self._session_prefix}_mix.wav"
-        transcripts_path = self._recordings_dir / f"{self._session_prefix}_transcripts.jsonl"
+        transcripts_path = (
+            self._recordings_dir / f"{self._session_prefix}_transcripts.jsonl"
+        )
 
         tasks = []
         if assistant_pcm:
@@ -514,7 +980,9 @@ class WebSocketInterviewSession:
                     "sessionId": self._session_id,
                     "assistantPath": str(assistant_path) if assistant_pcm else None,
                     "candidatePath": str(candidate_path) if candidate_pcm else None,
-                    "mixPath": str(mix_path) if assistant_pcm and candidate_pcm else None,
+                    "mixPath": (
+                        str(mix_path) if assistant_pcm and candidate_pcm else None
+                    ),
                     "transcriptsPath": str(transcripts_path) if transcripts else None,
                 }
             )
@@ -541,7 +1009,9 @@ class WebSocketInterviewSession:
                 try:
                     payload = json.loads(message["text"])
                 except json.JSONDecodeError:
-                    logger.warning("Invalid JSON message from client: %s", message["text"])
+                    logger.warning(
+                        "Invalid JSON message from client: %s", message["text"]
+                    )
                     continue
             elif "bytes" in message:
                 try:
@@ -646,7 +1116,9 @@ class WebSocketInterviewSession:
                     "type": "monitor",
                     "event": "look_away_warning",
                     "warnings": self._looked_away_warnings,
-                    "remaining": max(self._max_warnings - self._looked_away_warnings, 0),
+                    "remaining": max(
+                        self._max_warnings - self._looked_away_warnings, 0
+                    ),
                 }
             )
 
@@ -719,7 +1191,11 @@ class WebSocketInterviewSession:
                 if text:
                     await self.websocket.send_json({"type": "text", "text": text})
                 update = getattr(response, "session_resumption_update", None)
-                if update and getattr(update, "resumable", False) and getattr(update, "new_handle", None):
+                if (
+                    update
+                    and getattr(update, "resumable", False)
+                    and getattr(update, "new_handle", None)
+                ):
                     new_handle = update.new_handle
                     if new_handle != self._resume_handle:
                         self._resume_handle = new_handle
@@ -729,7 +1205,9 @@ class WebSocketInterviewSession:
                                 "handle": new_handle,
                             }
                         )
-                        logger.info("Session can be resumed with handle: %s", new_handle)
+                        logger.info(
+                            "Session can be resumed with handle: %s", new_handle
+                        )
 
                 if await self._maybe_finalize_from_response(
                     server_content=server_content,
@@ -850,7 +1328,9 @@ class WebSocketInterviewSession:
 
     async def _safe_close(self) -> None:
         for task in self._tasks:
-            if not task.done():
+            # if not task.done():
+            #     task.cancel()
+            if task.done():
                 task.cancel()
         if self.websocket.client_state == WebSocketState.CONNECTED:
             await self.websocket.close()
@@ -862,7 +1342,9 @@ class WebSocketInterviewSession:
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(pcm)
 
-    def _mix_wavs(self, assistant_path: Path, candidate_path: Path, mix_path: Path) -> None:
+    def _mix_wavs(
+        self, assistant_path: Path, candidate_path: Path, mix_path: Path
+    ) -> None:
         try:
             with wave.open(str(assistant_path), "rb") as assistant_wav, wave.open(
                 str(candidate_path), "rb"
@@ -906,12 +1388,16 @@ class WebSocketInterviewSession:
             for entry in transcripts:
                 outfile.write(json.dumps(entry, ensure_ascii=False))
                 outfile.write("\n")
-        
+
         # Create formatted Transcript and Score Candidate
         self._format_transcript_and_score(path, transcripts)
-    
-    def _format_transcript_and_score(self, path: Path, transcripts: List[Dict[str, Any]]) -> None:
-        formatted_path = path.parent / f"{self._session_prefix}_formatted_transcript.txt"
+
+    def _format_transcript_and_score(
+        self, path: Path, transcripts: List[Dict[str, Any]]
+    ) -> None:
+        formatted_path = (
+            path.parent / f"{self._session_prefix}_formatted_transcript.txt"
+        )
         score_path = path.parent / f"{self._session_prefix}_score.txt"
 
         formatted_path.parent.mkdir(parents=True, exist_ok=True)
@@ -925,7 +1411,9 @@ class WebSocketInterviewSession:
             if current_role and current_parts:
                 combined = "".join(current_parts).strip()
                 if combined:
-                    lines.append(f"[{current_timestamp}] {current_role.upper()}: {combined}")
+                    lines.append(
+                        f"[{current_timestamp}] {current_role.upper()}: {combined}"
+                    )
 
         for entry in transcripts:
             role = entry.get("role")
@@ -960,12 +1448,17 @@ class WebSocketInterviewSession:
         logger.info("Formatted transcript written to %s", formatted_path)
 
         if not formatted_text.strip():
-            logger.info("Formatted transcript empty; skipping scoring for session %s", self._session_id)
+            logger.info(
+                "Formatted transcript empty; skipping scoring for session %s",
+                self._session_id,
+            )
             return
 
         try:
             resume_text = (self._resume_text or DEFAULT_RESUME_TEXT).strip()
-            jd_text = (self._job_description_text or DEFAULT_JOB_DESCRIPTION_TEXT).strip()
+            jd_text = (
+                self._job_description_text or DEFAULT_JOB_DESCRIPTION_TEXT
+            ).strip()
             prompt_context = """
 Score the candidate based on the following criteria:
 1. Technical Skills: Evaluate the candidate's proficiency in relevant technical skills and knowledge.
@@ -978,7 +1471,7 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
 """
 
             response = client.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-2.5-flash",
                 contents={
                     "role": "user",
                     "parts": [
@@ -992,7 +1485,7 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
 
             score_path.write_text(response.text or "", encoding="utf-8")
             logger.info("Final evaluation written to %s", score_path)
-        except Exception as exc:  
+        except Exception as exc:
             logger.warning("Failed to generate candidate score: %s", exc)
             logger.info(traceback.format_exc())
 
@@ -1058,7 +1551,7 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
 @app.websocket("/ws/interview")
 async def interview_endpoint(websocket: WebSocket) -> None:
     resume_handle = websocket.query_params.get("resume")
-    
+
     # Validate and sanitize the resume handle
     # Only pass valid, non-empty session handles to avoid "Invalid session handle" errors
     validated_resume_handle = None
@@ -1067,8 +1560,10 @@ async def interview_endpoint(websocket: WebSocket) -> None:
         logger.info(f"Using session resume handle: {validated_resume_handle}")
     else:
         logger.info("Starting new session (no valid resume handle provided)")
-    
-    handler = WebSocketInterviewSession(websocket, resume_handle=validated_resume_handle)
+
+    handler = WebSocketInterviewSession(
+        websocket, resume_handle=validated_resume_handle
+    )
     try:
         await handler.run()
     except WebSocketDisconnect:
@@ -1080,6 +1575,38 @@ async def interview_endpoint(websocket: WebSocket) -> None:
                 await websocket.close(code=1011)
         except Exception as close_exc:  # pylint: disable=broad-except
             logger.exception("Error closing WebSocket connection", exc_info=close_exc)
+
+
+@app.websocket("/ws/webrtc")
+async def webrtc_endpoint(websocket: WebSocket) -> None:
+    """WebRTC signaling endpoint for better audio/video performance"""
+    await websocket.accept()
+    session_id = None
+
+    try:
+        # Import webrtc_server functions here to avoid circular imports
+        from webrtc_server import handle_webrtc_message, cleanup_session
+
+        while True:
+            # Receive signaling messages
+            data = await websocket.receive_text()
+            message = json.loads(data)
+
+            # Track session ID for cleanup
+            if not session_id and "session_id" in message:
+                session_id = message["session_id"]
+                logger.info(f"WebRTC session started: {session_id}")
+
+            # Handle WebRTC signaling
+            await handle_webrtc_message(websocket, message)
+
+    except WebSocketDisconnect:
+        logger.info(f"WebRTC client disconnected: {session_id}")
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("Unexpected error in WebRTC session", exc_info=exc)
+    finally:
+        if session_id:
+            await cleanup_session(session_id)
 
 
 @app.exception_handler(Exception)

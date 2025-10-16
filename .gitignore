@@ -4,4 +4,10 @@
 __pycache__
 node_modules/
 dist/
+db/*
 *.log
+utils/credentials.json
+utils/token.json
+utils/.env
+recordings/
+uploads/

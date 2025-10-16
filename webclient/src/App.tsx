@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useWebRTC, useRemoteAudio, useVideoDisplay } from "./use-webrtc";
 
 type Role = "system" | "user" | "assistant";
 
@@ -118,11 +119,14 @@ type AppView =
   | "dashboard"
   | "jobs"
   | "candidates"
+  | "interview-setup"
   | "results"
   | "analytics";
 
 const DEFAULT_WS_URL =
   import.meta.env.VITE_WS_URL ?? "ws://localhost:8000/ws/interview";
+const DEFAULT_WEBRTC_URL =
+  import.meta.env.VITE_WEBRTC_URL ?? "ws://localhost:8000/ws/webrtc";
 const FALLBACK_SEND_SAMPLE_RATE = 16000;
 const FRAME_INTERVAL_MS = 300;
 const RESUME_STORAGE_KEY = "resumeText";
@@ -338,19 +342,54 @@ const App = () => {
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [interviews, setInterviews] = useState<InterviewSummary[]>([]);
+  const [selectedSetupInterviewId, setSelectedSetupInterviewId] = useState<number | null>(null);
+  const [setupScheduledAt, setSetupScheduledAt] = useState<string>("");
+  const [setupDuration, setSetupDuration] = useState<number | null>(null);
+  const [newInterviewJobId, setNewInterviewJobId] = useState<number | null>(null);
+  const [newInterviewResumeId, setNewInterviewResumeId] = useState<number | null>(null);
+  const [newInterviewDatetime, setNewInterviewDatetime] = useState<string>("");
   const [selectedInterview, setSelectedInterview] =
     useState<InterviewResults | null>(null);
   const [databaseStats, setDatabaseStats] = useState<DatabaseStats | null>(
     null
   );
   const [loading, setLoading] = useState<boolean>(false);
+  const [connectionMode, setConnectionMode] = useState<"websocket" | "webrtc">("websocket");
   const [error, setError] = useState<string>("");
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("checking");
+  
+  // Toast notifications
+  const [toasts, setToasts] = useState<Array<{id: string, message: string, type: 'success' | 'error' | 'warning' | 'info'}>>([]);
+  
+  // Toast management functions
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+  
+  // Connection type state
+  const [enableWebRTC, setEnableWebRTC] = useState<boolean>(false);
 
   // Form state
   const [editingJob, setEditingJob] = useState<JobDescription | null>(null);
   const [editingResume, setEditingResume] = useState<Resume | null>(null);
+  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
+  const [formSubmitting, setFormSubmitting] = useState<boolean>(false);
+
+  // Search state
+  const [jobSearchQuery, setJobSearchQuery] = useState<string>("");
+  const [resumeSearchQuery, setResumeSearchQuery] = useState<string>("");
+  const [filteredJobs, setFilteredJobs] = useState<JobDescription[]>([]);
+  const [filteredResumes, setFilteredResumes] = useState<Resume[]>([]);
 
   const websocketRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -370,6 +409,27 @@ const App = () => {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const connectionAttemptRef = useRef<boolean>(false);
+
+  // WebRTC integration
+  const [webrtcState, webrtcControls] = useWebRTC(
+    aiSessionState.sessionId || "default",
+    {
+      websocketUrl: DEFAULT_WEBRTC_URL,
+      autoConnect: false,
+      enableVideo: cameraEnabled,
+      enableAudio: true,
+    },
+    (message) => {
+      // Handle WebRTC messages (similar to handleServerMessage)
+      // You can integrate this with existing message handling logic
+    }
+  );
+
+  // Audio player for remote WebRTC audio
+  useRemoteAudio(webrtcState.remoteAudioStream);
+
+  // Video display for local WebRTC video  
+  const setLocalVideo = useVideoDisplay(webrtcState.localStream);
 
   const appendMessage = useCallback((role: Role, text: string) => {
     if (!text) {
@@ -1029,6 +1089,25 @@ const App = () => {
     }
   }, [cleanupMedia]);
 
+  // Unified connection handlers that work with both WebSocket and WebRTC
+  const handleConnect = useCallback(async () => {
+    if (connectionMode === "webrtc") {
+      await webrtcControls.connect();
+      setStatus("connected");
+    } else {
+      await connect();
+    }
+  }, [connectionMode, webrtcControls, connect]);
+
+  const handleDisconnect = useCallback(async () => {
+    if (connectionMode === "webrtc") {
+      await webrtcControls.disconnect();
+      setStatus("disconnected");
+    } else {
+      await disconnect();
+    }
+  }, [connectionMode, webrtcControls, disconnect]);
+
   useEffect(() => {
     return () => {
       manualDisconnectRef.current = true;
@@ -1069,29 +1148,73 @@ const App = () => {
   }, [cameraEnabled, startVideoCapture, stopVideoCapture]);
 
   // Database API functions
-  const apiCall = async (endpoint: string, options?: RequestInit) => {
+  const apiCall = useCallback(async (endpoint: string, options?: RequestInit, retries = 2) => {
     const baseUrl = wsUrl
       .replace("ws://", "http://")
       .replace("wss://", "https://")
-      .replace("/ws/interview", "");
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-      ...options,
-    });
+      .replace(/\/ws\/.*$/, ""); // Remove any WebSocket path
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...options?.headers,
+          },
+          signal: controller.signal,
+          ...options,
+        });
+        
+        clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      throw new Error(
-        `API call failed: ${response.status} ${response.statusText}`
-      );
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorMessage;
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
+          } catch {
+            errorMessage = `API Error: ${response.status} ${response.statusText}`;
+          }
+          throw new Error(errorMessage);
+        }
+
+        return response.json();
+      } catch (error) {
+        if (attempt === retries) {
+          // Final attempt failed
+          if (error instanceof TypeError && error.message.includes('fetch')) {
+            throw new Error("Network error: Unable to connect to server. Please check if the server is running.");
+          }
+          throw error;
+        }
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
     }
+  }, [wsUrl]);
 
-    return response.json();
-  };
+  const checkConnection = useCallback(async () => {
+    try {
+      setConnectionStatus("checking");
+      await apiCall("/health", {}, 0); // No retries for health check
+      setConnectionStatus("connected");
+    } catch (error) {
+      setConnectionStatus("disconnected");
+    }
+  }, [apiCall]);
 
-  const loadDashboardData = async () => {
+  // Check connection on component mount and periodically
+  useEffect(() => {
+    checkConnection();
+    const interval = setInterval(checkConnection, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [wsUrl, checkConnection]);
+
+  const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -1108,9 +1231,53 @@ const App = () => {
     } finally {
       setLoading(false);
     }
+  }, [apiCall]);
+
+  const loadInterviews = useCallback(async () => {
+    try {
+      const data = await apiCall("/api/interviews");
+      setInterviews(data.interviews || []);
+    } catch (err) {
+      console.warn("Failed to load interviews for setup", err);
+    }
+  }, [apiCall]);
+
+  useEffect(() => {
+    // keep interviews list fresh when interview-setup tab is active
+    if (currentView === "interview-setup") {
+      void loadInterviews();
+    }
+  }, [currentView, loadInterviews]);
+
+  const updateInterviewFields = async (interviewId: number, updates: Record<string, any>) => {
+    try {
+      await apiCall(`/api/interviews/${interviewId}`, {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      });
+      await loadInterviews();
+      showToast("Interview updated", "success");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to update interview";
+      showToast(errorMsg, "error");
+    }
   };
 
-  const loadJobDescriptions = async () => {
+  const setInterviewStatus = async (interviewId: number, status: string) => {
+    try {
+      await apiCall(`/api/interviews/${interviewId}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status }),
+      });
+      await loadInterviews();
+      showToast(`Interview marked ${status}`, "success");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to update interview status";
+      showToast(errorMsg, "error");
+    }
+  };
+
+  const loadJobDescriptions = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -1123,9 +1290,9 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiCall]);
 
-  const loadResumes = async () => {
+  const loadResumes = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -1136,7 +1303,7 @@ const App = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiCall]);
 
   const createJob = async (job: JobDescription) => {
     try {
@@ -1146,21 +1313,52 @@ const App = () => {
       });
       await loadJobDescriptions();
       setEditingJob(null);
+      showToast("Job description created successfully!", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create job");
+      const errorMsg = err instanceof Error ? err.message : "Failed to create job";
+      setError(errorMsg);
+      showToast(errorMsg, "error");
     }
   };
 
   const createResume = async (resume: Resume) => {
     try {
-      await apiCall("/api/resumes", {
-        method: "POST",
-        body: JSON.stringify(resume),
-      });
+      // If a file is selected, upload as multipart/form-data to the new upload endpoint
+      if (selectedResumeFile) {
+        setFormSubmitting(true);
+        const baseUrl = wsUrl
+          .replace("ws://", "http://")
+          .replace("wss://", "https://")
+          .replace(/\/ws\/.*$/, "");
+
+        const form = new FormData();
+        form.append("candidate_name", resume.candidate_name);
+        if (resume.email) form.append("email", resume.email);
+        form.append("resume_file", selectedResumeFile, selectedResumeFile.name);
+
+        const response = await fetch(`${baseUrl}/api/resumes/upload`, {
+          method: "POST",
+          body: form,
+        });
+        if (!response.ok) {
+          const txt = await response.text();
+          throw new Error(txt || `Upload failed with status ${response.status}`);
+        }
+      } else {
+        await apiCall("/api/resumes", {
+          method: "POST",
+          body: JSON.stringify(resume),
+        });
+      }
       await loadResumes();
       setEditingResume(null);
+      setSelectedResumeFile(null);
+      setFormSubmitting(false);
+      showToast("Resume created successfully!", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create resume");
+      const errorMsg = err instanceof Error ? err.message : "Failed to create resume";
+      setError(errorMsg);
+      showToast(errorMsg, "error");
     }
   };
 
@@ -1191,7 +1389,7 @@ const App = () => {
         body: JSON.stringify({
           job_description_id: selectedJobId,
           resume_id: selectedResumeId,
-          // session_id: sessionId,
+          session_id: sessionId,
           duration_minutes: null,
         }),
       });
@@ -1227,6 +1425,114 @@ const App = () => {
     }
   };
 
+  // Update functions
+  const updateJob = async (jobId: number, job: JobDescription) => {
+    try {
+      await apiCall(`/api/jobs/${jobId}`, {
+        method: "PUT", 
+        body: JSON.stringify(job),
+      });
+      await loadJobDescriptions();
+      setEditingJob(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update job");
+    }
+  };
+
+  const updateResume = async (resumeId: number, resume: Resume) => {
+    try {
+      await apiCall(`/api/resumes/${resumeId}`, {
+        method: "PUT",
+        body: JSON.stringify(resume),
+      });
+      await loadResumes();
+      setEditingResume(null);
+      showToast("Resume updated successfully!", "success");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to update resume";
+      setError(errorMsg);
+      showToast(errorMsg, "error");
+    }
+  };
+
+  const updateInterviewStatus = async (interviewId: number, status: string) => {
+    try {
+      await apiCall(`/api/interviews/${interviewId}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status }),
+      });
+      await loadDashboardData(); // Reload interviews
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update interview status");
+    }
+  };
+
+  // Delete functions
+  const deleteJob = async (jobId: number) => {
+    if (!confirm("Are you sure you want to delete this job description?")) {
+      return;
+    }
+
+    try {
+      await apiCall(`/api/jobs/${jobId}`, {
+        method: "DELETE",
+      });
+      await loadJobDescriptions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete job");
+    }
+  };
+
+  const deleteResume = async (resumeId: number) => {
+    if (!confirm("Are you sure you want to delete this resume?")) {
+      return;
+    }
+
+    try {
+      await apiCall(`/api/resumes/${resumeId}`, {
+        method: "DELETE",
+      });
+      await loadResumes();
+      showToast("Resume deleted successfully!", "success");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to delete resume";
+      setError(errorMsg);
+      showToast(errorMsg, "error");
+    }
+  };
+
+  // Search functions
+  const searchCandidates = async (query: string) => {
+    try {
+      const data = await apiCall(`/api/search/candidates?q=${encodeURIComponent(query)}`);
+      return data.candidates || [];
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to search candidates");
+      return [];
+    }
+  };
+
+  const searchJobs = async (query: string) => {
+    try {
+      const data = await apiCall(`/api/search/jobs?q=${encodeURIComponent(query)}`);
+      return data.jobs || [];
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to search jobs");
+      return [];
+    }
+  };
+
+  // Match rating functions  
+  const getMatchRating = async (jobId: number, resumeId: number) => {
+    try {
+      const data = await apiCall(`/api/match-rating/${jobId}/${resumeId}`);
+      return data.match_rating;
+    } catch (err) {
+      // Match rating not found is normal, don't show error
+      return null;
+    }
+  };
+
   const loadInterviewResults = async (interviewId: number) => {
     setLoading(true);
     setError("");
@@ -1256,7 +1562,35 @@ const App = () => {
         loadResumes();
         break;
     }
-  }, [currentView]);
+  }, [currentView, loadDashboardData, loadJobDescriptions, loadResumes]);
+
+  // Search filtering for jobs
+  useEffect(() => {
+    if (jobSearchQuery.trim() === "") {
+      setFilteredJobs(jobDescriptions);
+    } else {
+      const filtered = jobDescriptions.filter(job =>
+        job.title.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
+        job.company.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
+        (job.description_text && job.description_text.toLowerCase().includes(jobSearchQuery.toLowerCase()))
+      );
+      setFilteredJobs(filtered);
+    }
+  }, [jobDescriptions, jobSearchQuery]);
+
+  // Search filtering for resumes
+  useEffect(() => {
+    if (resumeSearchQuery.trim() === "") {
+      setFilteredResumes(resumes);
+    } else {
+      const filtered = resumes.filter(resume =>
+        resume.candidate_name.toLowerCase().includes(resumeSearchQuery.toLowerCase()) ||
+        (resume.email && resume.email.toLowerCase().includes(resumeSearchQuery.toLowerCase())) ||
+        (resume.skills && resume.skills.toLowerCase().includes(resumeSearchQuery.toLowerCase()))
+      );
+      setFilteredResumes(filtered);
+    }
+  }, [resumes, resumeSearchQuery]);
 
   // Navigation component
   const Navigation = () => (
@@ -1312,6 +1646,19 @@ const App = () => {
           >
             <span className="relative z-10">Candidates</span>
             {currentView === "candidates" && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+            )}
+          </button>
+          <button
+            className={`relative px-4 py-3 font-medium text-sm transition-all duration-200 rounded-t-lg ${
+              currentView === "interview-setup"
+                ? "text-blue-600 bg-blue-50/80"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+            onClick={() => setCurrentView("interview-setup")}
+          >
+            <span className="relative z-10">Interview Setup</span>
+            {currentView === "interview-setup" && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
             )}
           </button>
@@ -1655,7 +2002,17 @@ const App = () => {
                       </div>
                     </div>
 
-                    <div className="ml-4">
+                    <div className="ml-4 flex space-x-3">
+                      <select
+                        value={interview.status}
+                        onChange={(e) => updateInterviewStatus(interview.interview_id, e.target.value)}
+                        className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
                       <button
                         onClick={() =>
                           loadInterviewResults(interview.interview_id)
@@ -1861,8 +2218,7 @@ const App = () => {
     </div>
   );
 
-  // console.log("Render MainApp");
-  // console.log(transcripts);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-slate-200/60 px-6 py-5">
@@ -1907,10 +2263,37 @@ const App = () => {
                 }`}
               ></div>
               {status === "connected"
-                ? "Live"
+                ? `Live (${connectionMode.toUpperCase()})`
                 : status === "connecting"
-                ? "Connecting"
+                ? `Connecting (${connectionMode.toUpperCase()})`
                 : "Offline"}
+            </div>
+            
+            {/* Backend Connection Status */}
+            <div
+              className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                connectionStatus === "connected"
+                  ? "bg-green-100 text-green-700 ring-1 ring-green-200"
+                  : connectionStatus === "checking"
+                  ? "bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200"
+                  : "bg-red-100 text-red-700 ring-1 ring-red-200"
+              }`}
+              title="Backend API Connection Status"
+            >
+              <div
+                className={`w-2 h-2 rounded-full mr-2 ${
+                  connectionStatus === "connected"
+                    ? "bg-green-500"
+                    : connectionStatus === "checking"
+                    ? "bg-yellow-500 animate-pulse"
+                    : "bg-red-500"
+                }`}
+              ></div>
+              {connectionStatus === "connected"
+                ? "API Connected"
+                : connectionStatus === "checking"
+                ? "Checking API..."
+                : "API Offline"}
             </div>
           </div>
         </div>
@@ -1929,6 +2312,30 @@ const App = () => {
               <p className="text-slate-600">
                 Manage your open positions and requirements
               </p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search jobs..."
+                  value={jobSearchQuery}
+                  onChange={(e) => setJobSearchQuery(e.target.value)}
+                  className="w-64 px-4 py-2 pl-10 pr-4 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <svg
+                  className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </div>
             </div>
             <button
               onClick={() =>
@@ -1962,8 +2369,36 @@ const App = () => {
             </button>
           </div>
 
-          {loading && <div className="loading">Loading...</div>}
-          {error && <div className="error">{error}</div>}
+          {loading && (
+            <div className="flex items-center justify-center p-8">
+              <div className="flex items-center space-x-3 bg-blue-50 px-4 py-2 rounded-lg">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-blue-700 font-medium">Loading job descriptions...</span>
+              </div>
+            </div>
+          )}
+          
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+              <div className="flex items-start space-x-3">
+                <div className="w-5 h-5 text-red-600 mt-0.5">
+                  <svg fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-red-800 font-medium mb-1">Error Loading Data</h4>
+                  <p className="text-red-600 text-sm">{error}</p>
+                  <button 
+                    onClick={() => setError("")}
+                    className="mt-2 text-red-600 hover:text-red-800 text-sm underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {editingJob && (
             <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200/60 p-8 mb-8">
@@ -2049,7 +2484,7 @@ const App = () => {
               />
               <div className="flex space-x-3">
                 <button
-                  onClick={() => createJob(editingJob)}
+                  onClick={() => editingJob.id ? updateJob(editingJob.id, editingJob) : createJob(editingJob)}
                   className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium transition-colors duration-200"
                 >
                   {editingJob.id ? "Update" : "Create"} Job
@@ -2065,7 +2500,7 @@ const App = () => {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {(jobDescriptions || []).map((job) => (
+            {(filteredJobs || []).map((job) => (
               <div
                 key={job.id}
                 className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
@@ -2083,22 +2518,30 @@ const App = () => {
                   <div>Location: {job.location || "Not specified"}</div>
                   <div>Salary: {job.salary_range || "Not specified"}</div>
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex flex-col space-y-2">
                   <button
                     onClick={() => {
                       setSelectedJobId(job.id!);
                       setJobDescriptionText(job.description_text);
                     }}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200"
                   >
                     Select for Interview
                   </button>
-                  <button
-                    onClick={() => setEditingJob(job)}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setEditingJob(job)}
+                      className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteJob(job.id!)}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -2119,6 +2562,30 @@ const App = () => {
                 <p className="text-lg text-slate-600">
                   Manage your candidate pipeline and talent database
                 </p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search candidates..."
+                    value={resumeSearchQuery}
+                    onChange={(e) => setResumeSearchQuery(e.target.value)}
+                    className="w-64 px-4 py-2 pl-10 pr-4 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                  <svg
+                    className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
               </div>
               <button
                 onClick={() =>
@@ -2217,6 +2684,45 @@ const App = () => {
               </div>
 
               <div className="p-8">
+                {/* File Upload */}
+                <div className="mb-8">
+                  <h4 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+                    Upload a resume file (txt, pdf, docx)
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      accept=".txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*"
+                      onChange={(e) => {
+                        const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                        setSelectedResumeFile(f);
+                        if (!editingResume.resume_text && f && f.type.startsWith('text')) {
+                          // attempt to read text files into the textarea for convenience
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const text = typeof reader.result === 'string' ? reader.result : '';
+                            setEditingResume({ ...editingResume, resume_text: text });
+                          };
+                          reader.readAsText(f);
+                        }
+                      }}
+                      className="block"
+                    />
+                    {selectedResumeFile && (
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <span className="font-medium">{selectedResumeFile.name}</span>
+                        <button
+                          onClick={() => setSelectedResumeFile(null)}
+                          type="button"
+                          className="text-red-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Personal Information Section */}
                 <div className="mb-8">
                   <h4 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
@@ -2412,11 +2918,12 @@ const App = () => {
                 {/* Form Actions */}
                 <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-slate-200">
                   <button
-                    onClick={() => createResume(editingResume)}
-                    disabled={
-                      !editingResume.candidate_name ||
-                      !editingResume.resume_text
-                    }
+                    onClick={() => editingResume.id ? updateResume(editingResume.id, editingResume) : createResume(editingResume)}
+                    disabled={formSubmitting}
+                    // disabled={
+                    //   !editingResume.candidate_name ||
+                    //   !editingResume.resume_text
+                    // }
                     className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-medium rounded-lg shadow-lg hover:from-emerald-700 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                   >
                     <svg
@@ -2500,7 +3007,7 @@ const App = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-              {(resumes || []).map((resume) => {
+              {(filteredResumes || []).map((resume) => {
                 const skillsArray = resume.skills
                   ? resume.skills
                       .split(",")
@@ -2707,25 +3214,46 @@ const App = () => {
                           </svg>
                           {isSelected ? "Selected" : "Select for Interview"}
                         </button>
-                        <button
-                          onClick={() => setEditingResume(resume)}
-                          className="px-4 py-2.5 bg-slate-600 text-white font-medium rounded-lg shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-all duration-200 flex items-center justify-center"
-                        >
-                          <svg
-                            className="w-4 h-4 mr-2"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setEditingResume(resume)}
+                            className="flex-1 px-4 py-2.5 bg-slate-600 text-white font-medium rounded-lg shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-all duration-200 flex items-center justify-center"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                            />
-                          </svg>
-                          Edit
-                        </button>
+                            <svg
+                              className="w-4 h-4 mr-2"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteResume(resume.id!)}
+                            className="flex-1 px-4 py-2.5 bg-red-600 text-white font-medium rounded-lg shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-200 flex items-center justify-center"
+                          >
+                            <svg
+                              className="w-4 h-4 mr-2"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2733,6 +3261,170 @@ const App = () => {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Interview Setup View */}
+      {currentView === "interview-setup" && (
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-slate-900 mb-1">Interview Setup</h2>
+              <p className="text-slate-600">Schedule interviews, start and track progress.</p>
+            </div>
+            <div>
+              <button
+                onClick={() => void loadInterviews()}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Create new interview form */}
+          <div className="max-w-3xl mx-auto mb-6 bg-white rounded-lg p-4 border">
+            <h3 className="font-medium mb-3">Create New Interview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+              <select value={newInterviewJobId ?? ''} onChange={(e) => setNewInterviewJobId(Number(e.target.value) || null)} className="px-3 py-2 border rounded-md">
+                <option value="">Select Job</option>
+                {(jobDescriptions || []).map(j => (
+                  <option key={j.id} value={j.id}>{j.title} - {j.company}</option>
+                ))}
+              </select>
+
+              <select value={newInterviewResumeId ?? ''} onChange={(e) => setNewInterviewResumeId(Number(e.target.value) || null)} className="px-3 py-2 border rounded-md">
+                <option value="">Select Candidate</option>
+                {(resumes || []).map(r => (
+                  <option key={r.id} value={r.id}>{r.candidate_name} {r.email ? `(${r.email})` : ''}</option>
+                ))}
+              </select>
+
+              <input type="datetime-local" value={newInterviewDatetime} onChange={(e) => setNewInterviewDatetime(e.target.value)} className="px-3 py-2 border rounded-md" />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={async () => {
+                if (!newInterviewJobId || !newInterviewResumeId) { showToast('Please select job and candidate', 'warning'); return; }
+                try {
+                  const sessionId = `interview_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
+                  const payload: any = {
+                    job_description_id: newInterviewJobId,
+                    resume_id: newInterviewResumeId,
+                    session_id: sessionId,
+                    duration_minutes: null,
+                  };
+                  // If datetime provided, include as scheduled_at via update after create (server create doesn't accept scheduled_at)
+                  await apiCall('/api/interviews', { method: 'POST', body: JSON.stringify(payload) });
+                  await loadInterviews();
+                  showToast('Interview created', 'success');
+                  // optionally set schedule by finding created interview - simplest: reload and clear
+                  setNewInterviewJobId(null);
+                  setNewInterviewResumeId(null);
+                  setNewInterviewDatetime('');
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : 'Failed to create interview', 'error');
+                }
+              }} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Create Interview</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="col-span-1 bg-white rounded-xl p-6 border">
+              <h3 className="font-medium mb-3">Scheduled Interviews</h3>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {interviews.length === 0 && <div className="text-sm text-slate-500">No interviews found</div>}
+                {interviews.map((iv) => (
+                  <div
+                    key={iv.interview_id}
+                    onClick={() => {
+                      setSelectedSetupInterviewId(iv.interview_id);
+                      setSetupScheduledAt(iv.started_at ?? iv.started_at ?? "");
+                      setSetupDuration(iv.duration_minutes ?? null);
+                    }}
+                    className={`p-3 rounded-md cursor-pointer border ${selectedSetupInterviewId === iv.interview_id ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 hover:shadow-sm'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 truncate">{iv.candidate_name}</div>
+                        <div className="text-xs text-slate-500">{iv.job_title} • {iv.company}</div>
+                      </div>
+                      <div className="text-xs text-slate-500">{iv.status}</div>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">{iv.started_at ? new Date(iv.started_at).toLocaleString() : iv.interview_id}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="col-span-2 bg-white rounded-xl p-6 border">
+              <h3 className="font-medium mb-4">Interview Controls</h3>
+              {!selectedSetupInterviewId ? (
+                <div className="text-sm text-slate-500">Select an interview from the left to configure and track progress.</div>
+              ) : (
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm text-slate-600 mb-1">Scheduled At</label>
+                      <input type="datetime-local" value={setupScheduledAt} onChange={(e) => setSetupScheduledAt(e.target.value)} className="w-full px-3 py-2 border rounded-md" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-600 mb-1">Duration (minutes)</label>
+                      <input type="number" value={setupDuration ?? ''} onChange={(e) => setSetupDuration(Number(e.target.value) || null)} min={1} className="w-full px-3 py-2 border rounded-md" />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mb-6">
+                    <button
+                      onClick={async () => {
+                        if (!selectedSetupInterviewId) return;
+                        const updates: any = {};
+                        if (setupScheduledAt) updates.scheduled_at = setupScheduledAt;
+                        if (setupDuration !== null) updates.duration_minutes = setupDuration;
+                        await updateInterviewFields(selectedSetupInterviewId, updates);
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!selectedSetupInterviewId) return;
+                        await setInterviewStatus(selectedSetupInterviewId, 'in_progress');
+                      }}
+                      className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600"
+                    >
+                      Start Interview
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!selectedSetupInterviewId) return;
+                        await setInterviewStatus(selectedSetupInterviewId, 'completed');
+                      }}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                    >
+                      Complete Interview
+                    </button>
+                  </div>
+
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-slate-700 mb-2">Progress</h4>
+                    {/* Simple progress indicator based on status */}
+                    <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
+                      <div className={`h-4 rounded-full transition-all duration-300 ${(() => {
+                        const iv = interviews.find(x => x.interview_id === selectedSetupInterviewId);
+                        if (!iv) return 'w-0 bg-slate-200';
+                        if (iv.status === 'scheduled') return 'w-16/100 bg-blue-500';
+                        if (iv.status === 'in_progress') return 'w-3/4 bg-amber-500';
+                        if (iv.status === 'completed') return 'w-full bg-emerald-500';
+                        return 'w-0 bg-slate-200';
+                      })()}`}></div>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-2">Status: {interviews.find(x => x.interview_id === selectedSetupInterviewId)?.status}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -3051,25 +3743,71 @@ const App = () => {
             </div>
 
             <div className="p-8">
-              {/* WebSocket URL Input */}
+              {/* Connection Mode Selector */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-700 mb-3">
-                  WebSocket Server URL
+                  Connection Type
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="connectionMode"
+                      value="websocket"
+                      checked={connectionMode === "websocket"}
+                      onChange={(e) => setConnectionMode(e.target.value as "websocket" | "webrtc")}
+                      className="mr-2 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-slate-700">WebSocket</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="connectionMode"
+                      value="webrtc"
+                      checked={connectionMode === "webrtc"}
+                      onChange={(e) => setConnectionMode(e.target.value as "websocket" | "webrtc")}
+                      className="mr-2 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-slate-700">WebRTC (Better Performance)</span>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  WebRTC provides better real-time audio/video performance compared to WebSocket
+                </p>
+              </div>
+
+              {/* Server URL Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-700 mb-3">
+                  {connectionMode === "webrtc" ? "WebRTC Server URL" : "WebSocket Server URL"}
                 </label>
                 <input
                   type="text"
-                  value={wsUrl}
-                  onChange={(event) => setWsUrl(event.target.value)}
-                  placeholder="ws://localhost:8000/ws/interview"
-                  className="w-full px-4 py-3 rounded-lg border-2 border-slate-300 bg-white/70 backdrop-blur-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all duration-200 font-mono text-sm"
+                  value={connectionMode === "webrtc" ? DEFAULT_WEBRTC_URL : wsUrl}
+                  onChange={(event) => {
+                    if (connectionMode === "websocket") {
+                      setWsUrl(event.target.value);
+                    }
+                  }}
+                  placeholder={connectionMode === "webrtc" ? "ws://localhost:8000/ws/webrtc" : "ws://localhost:8000/ws/interview"}
+                  disabled={connectionMode === "webrtc"}
+                  className={`w-full px-4 py-3 rounded-lg border-2 border-slate-300 bg-white/70 backdrop-blur-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all duration-200 font-mono text-sm ${
+                    connectionMode === "webrtc" ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
                 />
+                {connectionMode === "webrtc" && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    WebRTC URL is automatically configured
+                  </p>
+                )}
               </div>
 
               {/* Connection Buttons */}
               <div className="flex flex-wrap gap-4 mb-8">
                 <button
                   type="button"
-                  onClick={() => void connect()}
+                  onClick={() => void handleConnect()}
                   disabled={status === "connected" || status === "connecting"}
                   className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-medium rounded-lg shadow-sm hover:from-emerald-700 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
@@ -3086,11 +3824,11 @@ const App = () => {
                       d="M13 10V3L4 14h7v7l9-11h-7z"
                     />
                   </svg>
-                  Connect
+                  Connect {connectionMode === "webrtc" ? "(WebRTC)" : "(WebSocket)"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void disconnect()}
+                  onClick={() => void handleDisconnect()}
                   disabled={status === "disconnected"}
                   className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-red-600 to-pink-600 text-white font-medium rounded-lg shadow-sm hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
@@ -3744,6 +4482,62 @@ const App = () => {
         */}
         </section>
       )}
+      
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`min-w-80 max-w-md p-4 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-300 transform translate-x-0 ${
+              toast.type === 'success' ? 'bg-green-100/90 border border-green-200 text-green-800' :
+              toast.type === 'error' ? 'bg-red-100/90 border border-red-200 text-red-800' :
+              toast.type === 'warning' ? 'bg-yellow-100/90 border border-yellow-200 text-yellow-800' :
+              'bg-blue-100/90 border border-blue-200 text-blue-800'
+            }`}
+          >
+            <div className="flex justify-between items-start">
+              <div className="flex items-start space-x-3">
+                <div className={`w-5 h-5 mt-0.5 ${
+                  toast.type === 'success' ? 'text-green-600' :
+                  toast.type === 'error' ? 'text-red-600' :
+                  toast.type === 'warning' ? 'text-yellow-600' :
+                  'text-blue-600'
+                }`}>
+                  {toast.type === 'success' && (
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {toast.type === 'error' && (
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {toast.type === 'warning' && (
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {toast.type === 'info' && (
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+                <p className="text-sm font-medium">{toast.message}</p>
+              </div>
+              <button
+                onClick={() => dismissToast(toast.id)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
