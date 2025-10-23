@@ -124,6 +124,32 @@ async def home() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/login")
+async def login(login_request: LoginRequest):
+    """Simple hard-coded login for development/testing.
+    Accepts JSON {"username": "...", "password": "..."} and returns a token
+    when credentials match admin/admin.
+    """
+    try:
+        username = login_request.username or ""
+        password = login_request.password or ""
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid login payload")
+
+    # Hard-coded credentials for now
+    if username == "admin" and password == "admin":
+        # In a real app you'd issue a signed JWT or similar. For now return a
+        # simple token string that the frontend will store and include in requests.
+        return {"token": "hardcoded-admin-token", "message": "Login successful"}
+
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+
 # Database API Endpoints
 
 
@@ -352,7 +378,7 @@ async def create_interview(interview_data: InterviewCreate):
             send_email(
                 recipients=[resume.get("email")],
                 subject="Interview Scheduled",
-                body=f"Your interview has been scheduled successfully. Join here: {interview.interview_link}"
+                body=f"Your interview has been scheduled successfully. Join here: {interview.interview_link}",
             )
         return {"id": interview_id, "message": "Interview created successfully"}
     except Exception as e:

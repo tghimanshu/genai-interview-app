@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useWebRTC, useRemoteAudio, useVideoDisplay } from "./use-webrtc";
 
 type Role = "system" | "user" | "assistant";
@@ -339,6 +340,74 @@ const App = () => {
 
   // Database state
   const [currentView, setCurrentView] = useState<AppView>("interview");
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Simple client-side auth (placeholder)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return !!window.localStorage.getItem("authToken");
+    } catch {
+      return false;
+    }
+  });
+
+  // Helper: extract session id from path or query param
+  const getSessionIdFromLocation = (): string | null => {
+    try {
+      const qs = new URLSearchParams(location.search);
+      const q = qs.get("session") || qs.get("resume");
+      if (q) return q;
+      const parts = location.pathname.split("/").filter(Boolean);
+      // /interview/:sessionId
+      if (parts[0] === "interview" && parts[1]) return parts[1];
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // If location includes a session id, make sure resumeHandle is set so interview can resume
+  useEffect(() => {
+    const sid = getSessionIdFromLocation();
+    if (sid) {
+      setResumeHandle(sid);
+      resumeHandleRef.current = sid;
+      // keep current view as interview
+      setCurrentView("interview");
+    }
+  }, [location.pathname, location.search]);
+
+  // Sync currentView with URL pathname
+  useEffect(() => {
+    const path = location.pathname.replace(/\/$/, "");
+    switch (path) {
+      case "":
+      case "/":
+      case "/interview":
+        setCurrentView("interview");
+        break;
+      case "/dashboard":
+        setCurrentView("dashboard");
+        break;
+      case "/jobs":
+        setCurrentView("jobs");
+        break;
+      case "/candidates":
+        setCurrentView("candidates");
+        break;
+      case "/setup":
+      case "/interview-setup":
+        setCurrentView("interview-setup");
+        break;
+      case "/results":
+        setCurrentView("results");
+        break;
+      default:
+        // keep existing state
+        break;
+    }
+  }, [location.pathname]);
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [interviews, setInterviews] = useState<InterviewSummary[]>([]);
@@ -1159,11 +1228,18 @@ const App = () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
         
+        // attach auth token if present
+        let headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          ...((options && (options.headers as Record<string, string>)) || {}),
+        };
+        try {
+          const t = window.localStorage.getItem("authToken");
+          if (t) headers["Authorization"] = `Bearer ${t}`;
+        } catch {}
+
         const response = await fetch(`${baseUrl}${endpoint}`, {
-          headers: {
-            "Content-Type": "application/json",
-            ...options?.headers,
-          },
+          headers,
           signal: controller.signal,
           ...options,
         });
@@ -1336,9 +1412,17 @@ const App = () => {
         if (resume.email) form.append("email", resume.email);
         form.append("resume_file", selectedResumeFile, selectedResumeFile.name);
 
+        // include auth header for upload if available
+        const uploadHeaders: Record<string, string> = {};
+        try {
+          const t = window.localStorage.getItem("authToken");
+          if (t) uploadHeaders["Authorization"] = `Bearer ${t}`;
+        } catch {}
+
         const response = await fetch(`${baseUrl}/api/resumes/upload`, {
           method: "POST",
           body: form,
+          headers: uploadHeaders,
         });
         if (!response.ok) {
           const txt = await response.text();
@@ -1551,6 +1635,10 @@ const App = () => {
 
   // Load data when view changes
   useEffect(() => {
+    // Only load protected data when authenticated. Interview view is open to public sessions.
+    if (!isAuthenticated && currentView !== "interview") {
+      return;
+    }
     switch (currentView) {
       case "dashboard":
         loadDashboardData();
@@ -1562,7 +1650,7 @@ const App = () => {
         loadResumes();
         break;
     }
-  }, [currentView, loadDashboardData, loadJobDescriptions, loadResumes]);
+  }, [currentView, loadDashboardData, loadJobDescriptions, loadResumes, isAuthenticated]);
 
   // Search filtering for jobs
   useEffect(() => {
@@ -1603,7 +1691,10 @@ const App = () => {
                 ? "text-blue-600 bg-blue-50/80"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
-            onClick={() => setCurrentView("interview")}
+            onClick={() => {
+              navigate("/interview");
+              setCurrentView("interview");
+            }}
           >
             <span className="relative z-10">Live Interview</span>
             {currentView === "interview" && (
@@ -1616,7 +1707,10 @@ const App = () => {
                 ? "text-blue-600 bg-blue-50/80"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
-            onClick={() => setCurrentView("dashboard")}
+            onClick={() => {
+              navigate("/dashboard");
+              setCurrentView("dashboard");
+            }}
           >
             <span className="relative z-10">Dashboard</span>
             {currentView === "dashboard" && (
@@ -1629,7 +1723,10 @@ const App = () => {
                 ? "text-blue-600 bg-blue-50/80"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
-            onClick={() => setCurrentView("jobs")}
+            onClick={() => {
+              navigate("/jobs");
+              setCurrentView("jobs");
+            }}
           >
             <span className="relative z-10">Job Descriptions</span>
             {currentView === "jobs" && (
@@ -1642,7 +1739,10 @@ const App = () => {
                 ? "text-blue-600 bg-blue-50/80"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
-            onClick={() => setCurrentView("candidates")}
+            onClick={() => {
+              navigate("/candidates");
+              setCurrentView("candidates");
+            }}
           >
             <span className="relative z-10">Candidates</span>
             {currentView === "candidates" && (
@@ -1655,7 +1755,10 @@ const App = () => {
                 ? "text-blue-600 bg-blue-50/80"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
-            onClick={() => setCurrentView("interview-setup")}
+            onClick={() => {
+              navigate("/setup");
+              setCurrentView("interview-setup");
+            }}
           >
             <span className="relative z-10">Interview Setup</span>
             {currentView === "interview-setup" && (
@@ -1669,7 +1772,10 @@ const App = () => {
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
             }`}
             onClick={() =>
-              loadDashboardData().then(() => setCurrentView("results"))
+              loadDashboardData().then(() => {
+                navigate("/results");
+                setCurrentView("results");
+              })
             }
           >
             <span className="relative z-10">Interview Results</span>
@@ -1681,6 +1787,62 @@ const App = () => {
       </div>
     </nav>
   );
+
+  // Simple Login component
+  const LoginBox = () => {
+    const [user, setUser] = useState<string>("");
+    const [pass, setPass] = useState<string>("");
+    const [loginError, setLoginError] = useState<string>("");
+
+    const doLogin = async () => {
+      if (!user || !pass) {
+        setLoginError("Enter username and password");
+        showToast("Enter username and password", "warning");
+        return;
+      }
+
+      try {
+        setLoginError("");
+        // call backend to validate credentials (dev: hard-coded admin/admin server-side)
+        const result = await apiCall("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ username: user, password: pass }),
+        });
+
+        if (result && result.token) {
+          try { window.localStorage.setItem("authToken", result.token); } catch {}
+          setIsAuthenticated(true);
+          navigate("/dashboard");
+          setCurrentView("dashboard");
+          showToast(result.message || "Login successful", "success");
+        } else {
+          setLoginError("Invalid login response");
+          showToast("Invalid login response", "error");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Login failed";
+        setLoginError(msg);
+        showToast(msg, "error");
+      }
+    };
+
+    return (
+      <div className="max-w-md mx-auto py-20">
+        <div className="bg-white p-8 rounded-xl shadow">
+          <h3 className="text-lg font-semibold mb-4">Sign in to access this app</h3>
+          <input className="w-full mb-3 p-2 border rounded" placeholder="Username" value={user} onChange={(e) => setUser(e.target.value)} />
+          <input className="w-full mb-3 p-2 border rounded" placeholder="Password" type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
+          {loginError && (
+            <div className="text-sm text-red-600 mb-3">{loginError}</div>
+          )}
+          <div className="flex justify-end">
+            <button onClick={doLogin} className="px-4 py-2 bg-blue-600 text-white rounded">Sign in</button>
+          </div>
+          <div className="mt-3 text-xs text-slate-500">Use username <code>admin</code> and password <code>admin</code></div>
+        </div>
+      </div>
+    );
+  };
 
   // Dashboard component
   const Dashboard = () => (
@@ -2219,6 +2381,97 @@ const App = () => {
   );
 
 
+  // If user is not authenticated and is trying to access any route other than
+  // the public interview page, show the Login box only (keep header + nav)
+  if (!isAuthenticated && currentView !== "interview") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-slate-200/60 px-6 py-5">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                Interview Platform
+              </h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div
+                className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                  status === "connected"
+                    ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+                    : status === "connecting"
+                    ? "bg-amber-100 text-amber-700 ring-1 ring-amber-200"
+                    : "bg-red-100 text-red-700 ring-1 ring-red-200"
+                }`}
+              >
+                <div
+                  className={`w-2 h-2 rounded-full mr-2 ${
+                    status === "connected"
+                      ? "bg-emerald-500"
+                      : status === "connecting"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                  }`}
+                ></div>
+                {status === "connected"
+                  ? `Live (${connectionMode.toUpperCase()})`
+                  : status === "connecting"
+                  ? `Connecting (${connectionMode.toUpperCase()})`
+                  : "Offline"}
+              </div>
+
+              <div
+                className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                  connectionStatus === "connected"
+                    ? "bg-green-100 text-green-700 ring-1 ring-green-200"
+                    : connectionStatus === "checking"
+                    ? "bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200"
+                    : "bg-red-100 text-red-700 ring-1 ring-red-200"
+                }`}
+                title="Backend API Connection Status"
+              >
+                <div
+                  className={`w-2 h-2 rounded-full mr-2 ${
+                    connectionStatus === "connected"
+                      ? "bg-green-500"
+                      : connectionStatus === "checking"
+                      ? "bg-yellow-500 animate-pulse"
+                      : "bg-red-500"
+                  }`}
+                ></div>
+                {connectionStatus === "connected"
+                  ? "API Connected"
+                  : connectionStatus === "checking"
+                  ? "Checking API..."
+                  : "API Offline"}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <Navigation />
+
+        <div className="max-w-3xl mx-auto py-20 px-6">
+          <LoginBox />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-slate-200/60 px-6 py-5">
@@ -2295,6 +2548,22 @@ const App = () => {
                 ? "Checking API..."
                 : "API Offline"}
             </div>
+            {/* Auth controls */}
+            {isAuthenticated ? (
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => {
+                    try { window.localStorage.removeItem('authToken'); } catch {}
+                    setIsAuthenticated(false);
+                    navigate('/');
+                    setCurrentView('interview');
+                  }}
+                  className="px-3 py-1.5 bg-red-600 text-white rounded-md text-sm"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>

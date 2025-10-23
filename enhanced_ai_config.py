@@ -80,9 +80,18 @@ While interviewing, mentally evaluate:
 Remember: Your role is to bring out the best in each candidate while maintaining rigorous standards. Be the interviewer you would want to have when you were job searching.
 
 START THE INTERVIEW NOW with a warm, professional greeting.
+IMPORTANT: 
+1. All your communications must be in English.
+2. Even if the candidate responds in another language, continue the interview in English only.
+3. Interpret all user inputs as English language responses.
+4. Do not repeat the candidate's answers back to them.
+5. Always end the interview with "I hope you have a great day!"
 """
 
-def get_enhanced_ai_config(job_description: str, resume: str, session_context: dict = None) -> str:
+
+def get_enhanced_ai_config(
+    job_description: str, resume: str, session_context: dict = None
+) -> str:
     """
     Generate enhanced AI configuration with specific job and candidate context
     """
@@ -95,7 +104,7 @@ JOB POSITION DETAILS:
 CANDIDATE BACKGROUND:
 {resume}
 """
-    
+
     if session_context:
         additional_context = f"""
 SESSION INFORMATION:
@@ -105,35 +114,51 @@ SESSION INFORMATION:
 - Assessment Focus: Technical competency and cultural fit
 """
         context_section += additional_context
-    
+
     return ENHANCED_SYSTEM_PROMPT + context_section
 
-def get_interview_questions_by_role(job_description: str, experience_level: str = "mid") -> list:
+
+def get_interview_questions_by_role(
+    job_description: str, experience_level: str = "mid"
+) -> list:
     """
     Generate role-specific interview questions based on job requirements
     """
     # This would be enhanced to parse job descriptions and generate targeted questions
     # For now, returning a basic structure
-    
+
     base_questions = [
         {
             "category": "background",
             "question": "Tell me about a challenging project you've worked on recently and how you approached it.",
-            "follow_ups": ["What was the most difficult part?", "How did you overcome obstacles?", "What would you do differently?"]
+            "follow_ups": [
+                "What was the most difficult part?",
+                "How did you overcome obstacles?",
+                "What would you do differently?",
+            ],
         },
         {
             "category": "technical",
             "question": "How would you design a system to handle [specific requirement from job description]?",
-            "follow_ups": ["What about scalability?", "How would you handle errors?", "What trade-offs did you consider?"]
+            "follow_ups": [
+                "What about scalability?",
+                "How would you handle errors?",
+                "What trade-offs did you consider?",
+            ],
         },
         {
             "category": "problem_solving",
             "question": "Walk me through how you would debug [relevant technical issue].",
-            "follow_ups": ["What tools would you use?", "How would you prevent this in the future?", "What's your testing approach?"]
-        }
+            "follow_ups": [
+                "What tools would you use?",
+                "How would you prevent this in the future?",
+                "What's your testing approach?",
+            ],
+        },
     ]
-    
+
     return base_questions
+
 
 def get_interview_assessment_criteria() -> dict:
     """
@@ -144,10 +169,10 @@ def get_interview_assessment_criteria() -> dict:
             "weight": 0.4,
             "criteria": [
                 "Demonstrates relevant technical knowledge",
-                "Applies concepts correctly to practical problems", 
+                "Applies concepts correctly to practical problems",
                 "Shows understanding of trade-offs and implications",
-                "Keeps up with industry trends and best practices"
-            ]
+                "Keeps up with industry trends and best practices",
+            ],
         },
         "problem_solving": {
             "weight": 0.3,
@@ -155,8 +180,8 @@ def get_interview_assessment_criteria() -> dict:
                 "Breaks down complex problems systematically",
                 "Asks clarifying questions when needed",
                 "Considers multiple approaches and solutions",
-                "Handles ambiguity and uncertainty well"
-            ]
+                "Handles ambiguity and uncertainty well",
+            ],
         },
         "communication": {
             "weight": 0.2,
@@ -164,8 +189,8 @@ def get_interview_assessment_criteria() -> dict:
                 "Explains technical concepts clearly",
                 "Listens actively and responds appropriately",
                 "Structures responses logically",
-                "Adapts communication style to audience"
-            ]
+                "Adapts communication style to audience",
+            ],
         },
         "cultural_fit": {
             "weight": 0.1,
@@ -173,7 +198,7 @@ def get_interview_assessment_criteria() -> dict:
                 "Shows enthusiasm for the role and technology",
                 "Demonstrates growth mindset and learning agility",
                 "Exhibits professionalism and collaboration skills",
-                "Aligns with company values and team dynamics"
-            ]
-        }
+                "Aligns with company values and team dynamics",
+            ],
+        },
     }
