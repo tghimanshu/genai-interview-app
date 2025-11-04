@@ -1,6 +1,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useWebRTC, useRemoteAudio, useVideoDisplay } from "./use-webrtc";
+import { Editor } from "@monaco-editor/react";
+import * as monacoVim from "monaco-vim";
+import { LiveAudioVisualizer } from "react-audio-visualize";
 
 type Role = "system" | "user" | "assistant";
 
@@ -289,6 +292,201 @@ function buildConnectionUrl(
   }
 }
 
+const VimMonacoEditor = () => {
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  // State to manage the Vim mode instance
+  const [vimModeInstance, setVimModeInstance] = useState(null);
+  // State to manage the checkbox checked status
+  const [isVimEnabled, setIsVimEnabled] = useState(false);
+  const statusBarRef = useRef(null);
+  const [codeResult, setCodeResult] = useState<{
+    status: string | null;
+    exception: string | null;
+    stdout: string | null;
+    stderr: string | null;
+    executionTime: number | null;
+    stdin: string | null;
+    passed: boolean | null;
+  }>(null);
+
+  function handleEditorDidMount(editor, monaco) {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    // Set a reference to the status bar DOM element
+    statusBarRef.current = document.getElementById("vim-status-bar");
+  }
+
+  const handleCheckboxChange = (event) => {
+    const isChecked = event.target.checked;
+    setIsVimEnabled(isChecked);
+
+    if (isChecked) {
+      // Enable Vim mode when checked
+      if (editorRef.current && statusBarRef.current) {
+        const instance = monacoVim.initVimMode(
+          editorRef.current,
+          statusBarRef.current
+        );
+        setVimModeInstance(instance);
+      }
+    } else {
+      // Disable Vim mode when unchecked
+      if (vimModeInstance) {
+        vimModeInstance.dispose(); // Remove the attached VIM bindings
+        setVimModeInstance(null);
+        if (statusBarRef.current) {
+          statusBarRef.current.innerHTML = ""; // Clear the status bar text
+        }
+      }
+    }
+  };
+
+  // Optional: Dispose of the instance on component unmount
+  useEffect(() => {
+    return () => {
+      if (vimModeInstance) {
+        vimModeInstance.dispose();
+      }
+    };
+  }, [vimModeInstance]);
+
+  const handleCodeRun = () => {
+    if (editorRef.current) {
+      const code = editorRef.current.getValue();
+      // Send the code to the server for execution
+      console.log("Running code:", code);
+      fetch("http://localhost:8000/api/interviews/execute-code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          console.log("Execution result:", data);
+          setCodeResult(data);
+        })
+        .catch((error) => {
+          console.error("Error executing code:", error);
+        });
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: "10px" }}>
+        <input
+          type="checkbox"
+          id="toggleVim"
+          checked={isVimEnabled}
+          onChange={handleCheckboxChange}
+        />
+        <label htmlFor="toggleVim" style={{ marginLeft: "5px" }}>
+          Enable Vim Mode
+        </label>
+      </div>
+
+      <div
+        id="vim-status-bar"
+        style={{
+          padding: "5px",
+          backgroundColor: "#f0f0f0",
+          borderBottom: "1px solid #ccc",
+          fontSize: "14px",
+        }}
+      >
+        {/* The status bar text (e.g., NORMAL, INSERT) will appear here */}
+      </div>
+
+      <Editor
+        height="500px"
+        language="python"
+        onMount={handleEditorDidMount}
+        defaultValue={`print("Hello, World!")`}
+        theme="vs-dark"
+      />
+      <div className="flex justify-end flex-wrap gap-4 mt-4">
+        <button
+          type="button"
+          onClick={handleCodeRun}
+          className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-medium rounded-lg shadow-sm hover:from-emerald-700 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+        >
+          <svg
+            className="w-5 h-5 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
+          </svg>
+          Run
+          {/* {connectionMode === "webrtc" ? "(WebRTC)" : "(WebSocket)"} */}
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-red-600 to-pink-600 text-white font-medium rounded-lg shadow-sm hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+        >
+          <svg
+            className="w-5 h-5 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+          Submit
+        </button>
+      </div>
+
+      {/* Code execution result */}
+      {codeResult ? (
+        <div className="m-4 p-4 border border-gray-300 rounded-md">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-lg font-semibold">Execution Result</h3>
+            {/* badge of execution */}
+            {/* Status of the result */}
+            <div
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                codeResult.passed
+                  ? "bg-green-100 text-green-800"
+                  : "bg-red-100 text-red-800"
+              }`}
+            >
+              {codeResult.passed ? "Passed" : "Failed"} -{" "}
+              {codeResult.executionTime ?? "N/A"}ms
+            </div>
+            {/* <div className="text-sm text-gray-600">
+              Execution Time: {codeResult.executionTime ?? "N/A"}ms
+            </div> */}
+          </div>
+          <pre className="bg-gray-100 p-4 rounded-md mb-2 border border-gray-300">
+            {codeResult.stdout}
+          </pre>
+          {/* <pre className="bg-gray-100 p-4 rounded-md">
+          {codeResult ? JSON.stringify(codeResult, null, 2) : "No result"}
+        </pre> */}
+        </div>
+      ) : (
+        <div className="m-4 p-2 border border-gray-300 rounded-md">
+          No Result Found
+        </div>
+      )}
+    </div>
+  );
+};
+
 const App = () => {
   // Interview state
   const [status, setStatus] = useState<
@@ -298,7 +496,9 @@ const App = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
-  const [transcriptsFormatted, setTranscriptsFormatted] = useState<Transcript[]>([]);
+  const [transcriptsFormatted, setTranscriptsFormatted] = useState<
+    Transcript[]
+  >([]);
 
   const [inputText, setInputText] = useState<string>("");
   const [warningCount, setWarningCount] = useState<number>(0);
@@ -411,11 +611,17 @@ const App = () => {
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [interviews, setInterviews] = useState<InterviewSummary[]>([]);
-  const [selectedSetupInterviewId, setSelectedSetupInterviewId] = useState<number | null>(null);
+  const [selectedSetupInterviewId, setSelectedSetupInterviewId] = useState<
+    number | null
+  >(null);
   const [setupScheduledAt, setSetupScheduledAt] = useState<string>("");
   const [setupDuration, setSetupDuration] = useState<number | null>(null);
-  const [newInterviewJobId, setNewInterviewJobId] = useState<number | null>(null);
-  const [newInterviewResumeId, setNewInterviewResumeId] = useState<number | null>(null);
+  const [newInterviewJobId, setNewInterviewJobId] = useState<number | null>(
+    null
+  );
+  const [newInterviewResumeId, setNewInterviewResumeId] = useState<
+    number | null
+  >(null);
   const [newInterviewDatetime, setNewInterviewDatetime] = useState<string>("");
   const [selectedInterview, setSelectedInterview] =
     useState<InterviewResults | null>(null);
@@ -423,33 +629,51 @@ const App = () => {
     null
   );
   const [loading, setLoading] = useState<boolean>(false);
-  const [connectionMode, setConnectionMode] = useState<"websocket" | "webrtc">("websocket");
+  const [connectionMode, setConnectionMode] = useState<"websocket" | "webrtc">(
+    "websocket"
+  );
   const [error, setError] = useState<string>("");
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("checking");
-  
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "disconnected" | "checking"
+  >("checking");
+
   // Toast notifications
-  const [toasts, setToasts] = useState<Array<{id: string, message: string, type: 'success' | 'error' | 'warning' | 'info'}>>([]);
-  
+  const [toasts, setToasts] = useState<
+    Array<{
+      id: string;
+      message: string;
+      type: "success" | "error" | "warning" | "info";
+    }>
+  >([]);
+
   // Toast management functions
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
-    const id = Date.now().toString();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
-  }, []);
+  const showToast = useCallback(
+    (
+      message: string,
+      type: "success" | "error" | "warning" | "info" = "info"
+    ) => {
+      const id = Date.now().toString();
+      setToasts((prev) => [...prev, { id, message, type }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 5000);
+    },
+    []
+  );
 
   const dismissToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
-  
+
   // Connection type state
   const [enableWebRTC, setEnableWebRTC] = useState<boolean>(false);
 
   // Form state
   const [editingJob, setEditingJob] = useState<JobDescription | null>(null);
   const [editingResume, setEditingResume] = useState<Resume | null>(null);
-  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
+  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(
+    null
+  );
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
   const [formSubmitting, setFormSubmitting] = useState<boolean>(false);
@@ -497,7 +721,7 @@ const App = () => {
   // Audio player for remote WebRTC audio
   useRemoteAudio(webrtcState.remoteAudioStream);
 
-  // Video display for local WebRTC video  
+  // Video display for local WebRTC video
   const setLocalVideo = useVideoDisplay(webrtcState.localStream);
 
   const appendMessage = useCallback((role: Role, text: string) => {
@@ -530,10 +754,10 @@ const App = () => {
             timestamp: Date.now(),
           },
         ];
-      // } else if (prev[prev.length - 1].role === role) {
-      //   const last = prev[prev.length - 1];
-      //   last.text += extractedText;
-      //   return [...prev.splice(0, -2), last];
+        // } else if (prev[prev.length - 1].role === role) {
+        //   const last = prev[prev.length - 1];
+        //   last.text += extractedText;
+        //   return [...prev.splice(0, -2), last];
       } else {
         return [
           ...prev,
@@ -565,23 +789,24 @@ const App = () => {
         return [];
       } else {
         const formatted: Transcript[] = [];
-        transcripts.map(item => {
+        transcripts.map((item) => {
           if (formatted.length === 0) {
-            formatted.push({...item});
+            formatted.push({ ...item });
           } else {
             const last = formatted[formatted.length - 1];
             if (last.role === item.role) {
               last.text += item.text;
               formatted[formatted.length - 1] = last;
             } else {
-              formatted.push({...item});
+              formatted.push({ ...item });
             }
           }
-        })
+        });
         return formatted;
       }
     });
   }, [transcripts]);
+
   useEffect(() => {
     resumeHandleRef.current = resumeHandle;
     try {
@@ -1217,61 +1442,71 @@ const App = () => {
   }, [cameraEnabled, startVideoCapture, stopVideoCapture]);
 
   // Database API functions
-  const apiCall = useCallback(async (endpoint: string, options?: RequestInit, retries = 2) => {
-    const baseUrl = wsUrl
-      .replace("ws://", "http://")
-      .replace("wss://", "https://")
-      .replace(/\/ws\/.*$/, ""); // Remove any WebSocket path
-    
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-        
-        // attach auth token if present
-        let headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          ...((options && (options.headers as Record<string, string>)) || {}),
-        };
+  const apiCall = useCallback(
+    async (endpoint: string, options?: RequestInit, retries = 2) => {
+      const baseUrl = wsUrl
+        .replace("ws://", "http://")
+        .replace("wss://", "https://")
+        .replace(/\/ws\/.*$/, ""); // Remove any WebSocket path
+
+      for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-          const t = window.localStorage.getItem("authToken");
-          if (t) headers["Authorization"] = `Bearer ${t}`;
-        } catch {}
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-        const response = await fetch(`${baseUrl}${endpoint}`, {
-          headers,
-          signal: controller.signal,
-          ...options,
-        });
-        
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage;
+          // attach auth token if present
+          let headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            ...((options && (options.headers as Record<string, string>)) || {}),
+          };
           try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}: ${response.statusText}`;
-          } catch {
-            errorMessage = `API Error: ${response.status} ${response.statusText}`;
-          }
-          throw new Error(errorMessage);
-        }
+            const t = window.localStorage.getItem("authToken");
+            if (t) headers["Authorization"] = `Bearer ${t}`;
+          } catch {}
 
-        return response.json();
-      } catch (error) {
-        if (attempt === retries) {
-          // Final attempt failed
-          if (error instanceof TypeError && error.message.includes('fetch')) {
-            throw new Error("Network error: Unable to connect to server. Please check if the server is running.");
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            headers,
+            signal: controller.signal,
+            ...options,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage;
+            try {
+              const errorData = JSON.parse(errorText);
+              errorMessage =
+                errorData.detail ||
+                errorData.message ||
+                `HTTP ${response.status}: ${response.statusText}`;
+            } catch {
+              errorMessage = `API Error: ${response.status} ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
           }
-          throw error;
+
+          return response.json();
+        } catch (error) {
+          if (attempt === retries) {
+            // Final attempt failed
+            if (error instanceof TypeError && error.message.includes("fetch")) {
+              throw new Error(
+                "Network error: Unable to connect to server. Please check if the server is running."
+              );
+            }
+            throw error;
+          }
+          // Wait before retrying (exponential backoff)
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 1000)
+          );
         }
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
-    }
-  }, [wsUrl]);
+    },
+    [wsUrl]
+  );
 
   const checkConnection = useCallback(async () => {
     try {
@@ -1325,7 +1560,10 @@ const App = () => {
     }
   }, [currentView, loadInterviews]);
 
-  const updateInterviewFields = async (interviewId: number, updates: Record<string, any>) => {
+  const updateInterviewFields = async (
+    interviewId: number,
+    updates: Record<string, any>
+  ) => {
     try {
       await apiCall(`/api/interviews/${interviewId}`, {
         method: "PUT",
@@ -1334,7 +1572,8 @@ const App = () => {
       await loadInterviews();
       showToast("Interview updated", "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to update interview";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to update interview";
       showToast(errorMsg, "error");
     }
   };
@@ -1348,7 +1587,10 @@ const App = () => {
       await loadInterviews();
       showToast(`Interview marked ${status}`, "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to update interview status";
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          : "Failed to update interview status";
       showToast(errorMsg, "error");
     }
   };
@@ -1391,7 +1633,8 @@ const App = () => {
       setEditingJob(null);
       showToast("Job description created successfully!", "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to create job";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to create job";
       setError(errorMsg);
       showToast(errorMsg, "error");
     }
@@ -1426,7 +1669,9 @@ const App = () => {
         });
         if (!response.ok) {
           const txt = await response.text();
-          throw new Error(txt || `Upload failed with status ${response.status}`);
+          throw new Error(
+            txt || `Upload failed with status ${response.status}`
+          );
         }
       } else {
         await apiCall("/api/resumes", {
@@ -1440,7 +1685,8 @@ const App = () => {
       setFormSubmitting(false);
       showToast("Resume created successfully!", "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to create resume";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to create resume";
       setError(errorMsg);
       showToast(errorMsg, "error");
     }
@@ -1513,7 +1759,7 @@ const App = () => {
   const updateJob = async (jobId: number, job: JobDescription) => {
     try {
       await apiCall(`/api/jobs/${jobId}`, {
-        method: "PUT", 
+        method: "PUT",
         body: JSON.stringify(job),
       });
       await loadJobDescriptions();
@@ -1533,7 +1779,8 @@ const App = () => {
       setEditingResume(null);
       showToast("Resume updated successfully!", "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to update resume";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to update resume";
       setError(errorMsg);
       showToast(errorMsg, "error");
     }
@@ -1547,7 +1794,9 @@ const App = () => {
       });
       await loadDashboardData(); // Reload interviews
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update interview status");
+      setError(
+        err instanceof Error ? err.message : "Failed to update interview status"
+      );
     }
   };
 
@@ -1579,7 +1828,8 @@ const App = () => {
       await loadResumes();
       showToast("Resume deleted successfully!", "success");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to delete resume";
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to delete resume";
       setError(errorMsg);
       showToast(errorMsg, "error");
     }
@@ -1588,17 +1838,23 @@ const App = () => {
   // Search functions
   const searchCandidates = async (query: string) => {
     try {
-      const data = await apiCall(`/api/search/candidates?q=${encodeURIComponent(query)}`);
+      const data = await apiCall(
+        `/api/search/candidates?q=${encodeURIComponent(query)}`
+      );
       return data.candidates || [];
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to search candidates");
+      setError(
+        err instanceof Error ? err.message : "Failed to search candidates"
+      );
       return [];
     }
   };
 
   const searchJobs = async (query: string) => {
     try {
-      const data = await apiCall(`/api/search/jobs?q=${encodeURIComponent(query)}`);
+      const data = await apiCall(
+        `/api/search/jobs?q=${encodeURIComponent(query)}`
+      );
       return data.jobs || [];
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to search jobs");
@@ -1606,7 +1862,7 @@ const App = () => {
     }
   };
 
-  // Match rating functions  
+  // Match rating functions
   const getMatchRating = async (jobId: number, resumeId: number) => {
     try {
       const data = await apiCall(`/api/match-rating/${jobId}/${resumeId}`);
@@ -1650,17 +1906,27 @@ const App = () => {
         loadResumes();
         break;
     }
-  }, [currentView, loadDashboardData, loadJobDescriptions, loadResumes, isAuthenticated]);
+  }, [
+    currentView,
+    loadDashboardData,
+    loadJobDescriptions,
+    loadResumes,
+    isAuthenticated,
+  ]);
 
   // Search filtering for jobs
   useEffect(() => {
     if (jobSearchQuery.trim() === "") {
       setFilteredJobs(jobDescriptions);
     } else {
-      const filtered = jobDescriptions.filter(job =>
-        job.title.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
-        job.company.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
-        (job.description_text && job.description_text.toLowerCase().includes(jobSearchQuery.toLowerCase()))
+      const filtered = jobDescriptions.filter(
+        (job) =>
+          job.title.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
+          job.company.toLowerCase().includes(jobSearchQuery.toLowerCase()) ||
+          (job.description_text &&
+            job.description_text
+              .toLowerCase()
+              .includes(jobSearchQuery.toLowerCase()))
       );
       setFilteredJobs(filtered);
     }
@@ -1671,10 +1937,19 @@ const App = () => {
     if (resumeSearchQuery.trim() === "") {
       setFilteredResumes(resumes);
     } else {
-      const filtered = resumes.filter(resume =>
-        resume.candidate_name.toLowerCase().includes(resumeSearchQuery.toLowerCase()) ||
-        (resume.email && resume.email.toLowerCase().includes(resumeSearchQuery.toLowerCase())) ||
-        (resume.skills && resume.skills.toLowerCase().includes(resumeSearchQuery.toLowerCase()))
+      const filtered = resumes.filter(
+        (resume) =>
+          resume.candidate_name
+            .toLowerCase()
+            .includes(resumeSearchQuery.toLowerCase()) ||
+          (resume.email &&
+            resume.email
+              .toLowerCase()
+              .includes(resumeSearchQuery.toLowerCase())) ||
+          (resume.skills &&
+            resume.skills
+              .toLowerCase()
+              .includes(resumeSearchQuery.toLowerCase()))
       );
       setFilteredResumes(filtered);
     }
@@ -1810,7 +2085,9 @@ const App = () => {
         });
 
         if (result && result.token) {
-          try { window.localStorage.setItem("authToken", result.token); } catch {}
+          try {
+            window.localStorage.setItem("authToken", result.token);
+          } catch {}
           setIsAuthenticated(true);
           navigate("/dashboard");
           setCurrentView("dashboard");
@@ -1829,16 +2106,36 @@ const App = () => {
     return (
       <div className="max-w-md mx-auto py-20">
         <div className="bg-white p-8 rounded-xl shadow">
-          <h3 className="text-lg font-semibold mb-4">Sign in to access this app</h3>
-          <input className="w-full mb-3 p-2 border rounded" placeholder="Username" value={user} onChange={(e) => setUser(e.target.value)} />
-          <input className="w-full mb-3 p-2 border rounded" placeholder="Password" type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
+          <h3 className="text-lg font-semibold mb-4">
+            Sign in to access this app
+          </h3>
+          <input
+            className="w-full mb-3 p-2 border rounded"
+            placeholder="Username"
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+          />
+          <input
+            className="w-full mb-3 p-2 border rounded"
+            placeholder="Password"
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+          />
           {loginError && (
             <div className="text-sm text-red-600 mb-3">{loginError}</div>
           )}
           <div className="flex justify-end">
-            <button onClick={doLogin} className="px-4 py-2 bg-blue-600 text-white rounded">Sign in</button>
+            <button
+              onClick={doLogin}
+              className="px-4 py-2 bg-blue-600 text-white rounded"
+            >
+              Sign in
+            </button>
           </div>
-          <div className="mt-3 text-xs text-slate-500">Use username <code>admin</code> and password <code>admin</code></div>
+          <div className="mt-3 text-xs text-slate-500">
+            Use username <code>admin</code> and password <code>admin</code>
+          </div>
         </div>
       </div>
     );
@@ -2167,7 +2464,12 @@ const App = () => {
                     <div className="ml-4 flex space-x-3">
                       <select
                         value={interview.status}
-                        onChange={(e) => updateInterviewStatus(interview.interview_id, e.target.value)}
+                        onChange={(e) =>
+                          updateInterviewStatus(
+                            interview.interview_id,
+                            e.target.value
+                          )
+                        }
                         className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="scheduled">Scheduled</option>
@@ -2380,7 +2682,6 @@ const App = () => {
     </div>
   );
 
-
   // If user is not authenticated and is trying to access any route other than
   // the public interview page, show the Login box only (keep header + nav)
   if (!isAuthenticated && currentView !== "interview") {
@@ -2463,8 +2764,6 @@ const App = () => {
           </div>
         </header>
 
-        <Navigation />
-
         <div className="max-w-3xl mx-auto py-20 px-6">
           <LoginBox />
         </div>
@@ -2493,7 +2792,7 @@ const App = () => {
               </svg>
             </div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-              Interview Platform
+              AI CoE Interview Platform
             </h1>
           </div>
           <div className="flex items-center space-x-4">
@@ -2519,9 +2818,10 @@ const App = () => {
                 ? `Live (${connectionMode.toUpperCase()})`
                 : status === "connecting"
                 ? `Connecting (${connectionMode.toUpperCase()})`
-                : "Offline"}
+                // : "Offline"}
+                : "Interview Not Started"}
             </div>
-            
+
             {/* Backend Connection Status */}
             <div
               className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
@@ -2543,32 +2843,37 @@ const App = () => {
                 }`}
               ></div>
               {connectionStatus === "connected"
-                ? "API Connected"
+                // ? "API Connected"
+                ? "Connection Healthy"
                 : connectionStatus === "checking"
-                ? "Checking API..."
-                : "API Offline"}
+                // ? "Checking API..."
+                ? "Checking Connection..."
+                // : "API Offline"}
+                : "Connection Lost"}
             </div>
             {/* Auth controls */}
-            {isAuthenticated ? (
+            {/* {isAuthenticated ? (
               <div className="flex items-center space-x-3">
                 <button
                   onClick={() => {
-                    try { window.localStorage.removeItem('authToken'); } catch {}
+                    try {
+                      window.localStorage.removeItem("authToken");
+                    } catch {}
                     setIsAuthenticated(false);
-                    navigate('/');
-                    setCurrentView('interview');
+                    navigate("/");
+                    setCurrentView("interview");
                   }}
                   className="px-3 py-1.5 bg-red-600 text-white rounded-md text-sm"
                 >
                   Sign out
                 </button>
               </div>
-            ) : null}
+            ) : null} */}
           </div>
         </div>
       </header>
 
-      <Navigation />
+      {currentView !== "interview" && <Navigation />}
 
       {/* Job Descriptions Management */}
       {currentView === "jobs" && (
@@ -2642,23 +2947,31 @@ const App = () => {
             <div className="flex items-center justify-center p-8">
               <div className="flex items-center space-x-3 bg-blue-50 px-4 py-2 rounded-lg">
                 <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-blue-700 font-medium">Loading job descriptions...</span>
+                <span className="text-blue-700 font-medium">
+                  Loading job descriptions...
+                </span>
               </div>
             </div>
           )}
-          
+
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
               <div className="flex items-start space-x-3">
                 <div className="w-5 h-5 text-red-600 mt-0.5">
                   <svg fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-red-800 font-medium mb-1">Error Loading Data</h4>
+                  <h4 className="text-red-800 font-medium mb-1">
+                    Error Loading Data
+                  </h4>
                   <p className="text-red-600 text-sm">{error}</p>
-                  <button 
+                  <button
                     onClick={() => setError("")}
                     className="mt-2 text-red-600 hover:text-red-800 text-sm underline"
                   >
@@ -2753,7 +3066,11 @@ const App = () => {
               />
               <div className="flex space-x-3">
                 <button
-                  onClick={() => editingJob.id ? updateJob(editingJob.id, editingJob) : createJob(editingJob)}
+                  onClick={() =>
+                    editingJob.id
+                      ? updateJob(editingJob.id, editingJob)
+                      : createJob(editingJob)
+                  }
                   className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium transition-colors duration-200"
                 >
                   {editingJob.id ? "Update" : "Create"} Job
@@ -2963,14 +3280,27 @@ const App = () => {
                       type="file"
                       accept=".txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*"
                       onChange={(e) => {
-                        const f = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+                        const f =
+                          e.target.files && e.target.files[0]
+                            ? e.target.files[0]
+                            : null;
                         setSelectedResumeFile(f);
-                        if (!editingResume.resume_text && f && f.type.startsWith('text')) {
+                        if (
+                          !editingResume.resume_text &&
+                          f &&
+                          f.type.startsWith("text")
+                        ) {
                           // attempt to read text files into the textarea for convenience
                           const reader = new FileReader();
                           reader.onload = () => {
-                            const text = typeof reader.result === 'string' ? reader.result : '';
-                            setEditingResume({ ...editingResume, resume_text: text });
+                            const text =
+                              typeof reader.result === "string"
+                                ? reader.result
+                                : "";
+                            setEditingResume({
+                              ...editingResume,
+                              resume_text: text,
+                            });
                           };
                           reader.readAsText(f);
                         }
@@ -2979,7 +3309,9 @@ const App = () => {
                     />
                     {selectedResumeFile && (
                       <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <span className="font-medium">{selectedResumeFile.name}</span>
+                        <span className="font-medium">
+                          {selectedResumeFile.name}
+                        </span>
                         <button
                           onClick={() => setSelectedResumeFile(null)}
                           type="button"
@@ -3187,7 +3519,11 @@ const App = () => {
                 {/* Form Actions */}
                 <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-slate-200">
                   <button
-                    onClick={() => editingResume.id ? updateResume(editingResume.id, editingResume) : createResume(editingResume)}
+                    onClick={() =>
+                      editingResume.id
+                        ? updateResume(editingResume.id, editingResume)
+                        : createResume(editingResume)
+                    }
                     disabled={formSubmitting}
                     // disabled={
                     //   !editingResume.candidate_name ||
@@ -3538,8 +3874,12 @@ const App = () => {
         <div className="max-w-7xl mx-auto p-6">
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h2 className="text-3xl font-bold text-slate-900 mb-1">Interview Setup</h2>
-              <p className="text-slate-600">Schedule interviews, start and track progress.</p>
+              <h2 className="text-3xl font-bold text-slate-900 mb-1">
+                Interview Setup
+              </h2>
+              <p className="text-slate-600">
+                Schedule interviews, start and track progress.
+              </p>
             </div>
             <div>
               <button
@@ -3555,45 +3895,84 @@ const App = () => {
           <div className="max-w-3xl mx-auto mb-6 bg-white rounded-lg p-4 border">
             <h3 className="font-medium mb-3">Create New Interview</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-              <select value={newInterviewJobId ?? ''} onChange={(e) => setNewInterviewJobId(Number(e.target.value) || null)} className="px-3 py-2 border rounded-md">
+              <select
+                value={newInterviewJobId ?? ""}
+                onChange={(e) =>
+                  setNewInterviewJobId(Number(e.target.value) || null)
+                }
+                className="px-3 py-2 border rounded-md"
+              >
                 <option value="">Select Job</option>
-                {(jobDescriptions || []).map(j => (
-                  <option key={j.id} value={j.id}>{j.title} - {j.company}</option>
+                {(jobDescriptions || []).map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.title} - {j.company}
+                  </option>
                 ))}
               </select>
 
-              <select value={newInterviewResumeId ?? ''} onChange={(e) => setNewInterviewResumeId(Number(e.target.value) || null)} className="px-3 py-2 border rounded-md">
+              <select
+                value={newInterviewResumeId ?? ""}
+                onChange={(e) =>
+                  setNewInterviewResumeId(Number(e.target.value) || null)
+                }
+                className="px-3 py-2 border rounded-md"
+              >
                 <option value="">Select Candidate</option>
-                {(resumes || []).map(r => (
-                  <option key={r.id} value={r.id}>{r.candidate_name} {r.email ? `(${r.email})` : ''}</option>
+                {(resumes || []).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.candidate_name} {r.email ? `(${r.email})` : ""}
+                  </option>
                 ))}
               </select>
 
-              <input type="datetime-local" value={newInterviewDatetime} onChange={(e) => setNewInterviewDatetime(e.target.value)} className="px-3 py-2 border rounded-md" />
+              <input
+                type="datetime-local"
+                value={newInterviewDatetime}
+                onChange={(e) => setNewInterviewDatetime(e.target.value)}
+                className="px-3 py-2 border rounded-md"
+              />
             </div>
             <div className="flex gap-3">
-              <button onClick={async () => {
-                if (!newInterviewJobId || !newInterviewResumeId) { showToast('Please select job and candidate', 'warning'); return; }
-                try {
-                  const sessionId = `interview_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
-                  const payload: any = {
-                    job_description_id: newInterviewJobId,
-                    resume_id: newInterviewResumeId,
-                    session_id: sessionId,
-                    duration_minutes: null,
-                  };
-                  // If datetime provided, include as scheduled_at via update after create (server create doesn't accept scheduled_at)
-                  await apiCall('/api/interviews', { method: 'POST', body: JSON.stringify(payload) });
-                  await loadInterviews();
-                  showToast('Interview created', 'success');
-                  // optionally set schedule by finding created interview - simplest: reload and clear
-                  setNewInterviewJobId(null);
-                  setNewInterviewResumeId(null);
-                  setNewInterviewDatetime('');
-                } catch (err) {
-                  showToast(err instanceof Error ? err.message : 'Failed to create interview', 'error');
-                }
-              }} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Create Interview</button>
+              <button
+                onClick={async () => {
+                  if (!newInterviewJobId || !newInterviewResumeId) {
+                    showToast("Please select job and candidate", "warning");
+                    return;
+                  }
+                  try {
+                    const sessionId = `interview_${Date.now()}_${Math.random()
+                      .toString(36)
+                      .substr(2, 9)}`;
+                    const payload: any = {
+                      job_description_id: newInterviewJobId,
+                      resume_id: newInterviewResumeId,
+                      session_id: sessionId,
+                      duration_minutes: null,
+                    };
+                    // If datetime provided, include as scheduled_at via update after create (server create doesn't accept scheduled_at)
+                    await apiCall("/api/interviews", {
+                      method: "POST",
+                      body: JSON.stringify(payload),
+                    });
+                    await loadInterviews();
+                    showToast("Interview created", "success");
+                    // optionally set schedule by finding created interview - simplest: reload and clear
+                    setNewInterviewJobId(null);
+                    setNewInterviewResumeId(null);
+                    setNewInterviewDatetime("");
+                  } catch (err) {
+                    showToast(
+                      err instanceof Error
+                        ? err.message
+                        : "Failed to create interview",
+                      "error"
+                    );
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+              >
+                Create Interview
+              </button>
             </div>
           </div>
 
@@ -3601,7 +3980,11 @@ const App = () => {
             <div className="col-span-1 bg-white rounded-xl p-6 border">
               <h3 className="font-medium mb-3">Scheduled Interviews</h3>
               <div className="space-y-3 max-h-96 overflow-y-auto">
-                {interviews.length === 0 && <div className="text-sm text-slate-500">No interviews found</div>}
+                {interviews.length === 0 && (
+                  <div className="text-sm text-slate-500">
+                    No interviews found
+                  </div>
+                )}
                 {interviews.map((iv) => (
                   <div
                     key={iv.interview_id}
@@ -3610,16 +3993,28 @@ const App = () => {
                       setSetupScheduledAt(iv.started_at ?? iv.started_at ?? "");
                       setSetupDuration(iv.duration_minutes ?? null);
                     }}
-                    className={`p-3 rounded-md cursor-pointer border ${selectedSetupInterviewId === iv.interview_id ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 hover:shadow-sm'}`}
+                    className={`p-3 rounded-md cursor-pointer border ${
+                      selectedSetupInterviewId === iv.interview_id
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-slate-100 hover:shadow-sm"
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-sm font-medium text-slate-900 truncate">{iv.candidate_name}</div>
-                        <div className="text-xs text-slate-500">{iv.job_title} • {iv.company}</div>
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {iv.candidate_name}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {iv.job_title} • {iv.company}
+                        </div>
                       </div>
                       <div className="text-xs text-slate-500">{iv.status}</div>
                     </div>
-                    <div className="text-xs text-slate-400 mt-1">{iv.started_at ? new Date(iv.started_at).toLocaleString() : iv.interview_id}</div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      {iv.started_at
+                        ? new Date(iv.started_at).toLocaleString()
+                        : iv.interview_id}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3628,17 +4023,37 @@ const App = () => {
             <div className="col-span-2 bg-white rounded-xl p-6 border">
               <h3 className="font-medium mb-4">Interview Controls</h3>
               {!selectedSetupInterviewId ? (
-                <div className="text-sm text-slate-500">Select an interview from the left to configure and track progress.</div>
+                <div className="text-sm text-slate-500">
+                  Select an interview from the left to configure and track
+                  progress.
+                </div>
               ) : (
                 <div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm text-slate-600 mb-1">Scheduled At</label>
-                      <input type="datetime-local" value={setupScheduledAt} onChange={(e) => setSetupScheduledAt(e.target.value)} className="w-full px-3 py-2 border rounded-md" />
+                      <label className="block text-sm text-slate-600 mb-1">
+                        Scheduled At
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={setupScheduledAt}
+                        onChange={(e) => setSetupScheduledAt(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm text-slate-600 mb-1">Duration (minutes)</label>
-                      <input type="number" value={setupDuration ?? ''} onChange={(e) => setSetupDuration(Number(e.target.value) || null)} min={1} className="w-full px-3 py-2 border rounded-md" />
+                      <label className="block text-sm text-slate-600 mb-1">
+                        Duration (minutes)
+                      </label>
+                      <input
+                        type="number"
+                        value={setupDuration ?? ""}
+                        onChange={(e) =>
+                          setSetupDuration(Number(e.target.value) || null)
+                        }
+                        min={1}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
                     </div>
                   </div>
 
@@ -3647,9 +4062,14 @@ const App = () => {
                       onClick={async () => {
                         if (!selectedSetupInterviewId) return;
                         const updates: any = {};
-                        if (setupScheduledAt) updates.scheduled_at = setupScheduledAt;
-                        if (setupDuration !== null) updates.duration_minutes = setupDuration;
-                        await updateInterviewFields(selectedSetupInterviewId, updates);
+                        if (setupScheduledAt)
+                          updates.scheduled_at = setupScheduledAt;
+                        if (setupDuration !== null)
+                          updates.duration_minutes = setupDuration;
+                        await updateInterviewFields(
+                          selectedSetupInterviewId,
+                          updates
+                        );
                       }}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
@@ -3658,7 +4078,10 @@ const App = () => {
                     <button
                       onClick={async () => {
                         if (!selectedSetupInterviewId) return;
-                        await setInterviewStatus(selectedSetupInterviewId, 'in_progress');
+                        await setInterviewStatus(
+                          selectedSetupInterviewId,
+                          "in_progress"
+                        );
                       }}
                       className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600"
                     >
@@ -3667,7 +4090,10 @@ const App = () => {
                     <button
                       onClick={async () => {
                         if (!selectedSetupInterviewId) return;
-                        await setInterviewStatus(selectedSetupInterviewId, 'completed');
+                        await setInterviewStatus(
+                          selectedSetupInterviewId,
+                          "completed"
+                        );
                       }}
                       className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
                     >
@@ -3676,19 +4102,35 @@ const App = () => {
                   </div>
 
                   <div className="mb-4">
-                    <h4 className="text-sm font-medium text-slate-700 mb-2">Progress</h4>
+                    <h4 className="text-sm font-medium text-slate-700 mb-2">
+                      Progress
+                    </h4>
                     {/* Simple progress indicator based on status */}
                     <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
-                      <div className={`h-4 rounded-full transition-all duration-300 ${(() => {
-                        const iv = interviews.find(x => x.interview_id === selectedSetupInterviewId);
-                        if (!iv) return 'w-0 bg-slate-200';
-                        if (iv.status === 'scheduled') return 'w-16/100 bg-blue-500';
-                        if (iv.status === 'in_progress') return 'w-3/4 bg-amber-500';
-                        if (iv.status === 'completed') return 'w-full bg-emerald-500';
-                        return 'w-0 bg-slate-200';
-                      })()}`}></div>
+                      <div
+                        className={`h-4 rounded-full transition-all duration-300 ${(() => {
+                          const iv = interviews.find(
+                            (x) => x.interview_id === selectedSetupInterviewId
+                          );
+                          if (!iv) return "w-0 bg-slate-200";
+                          if (iv.status === "scheduled")
+                            return "w-16/100 bg-blue-500";
+                          if (iv.status === "in_progress")
+                            return "w-3/4 bg-amber-500";
+                          if (iv.status === "completed")
+                            return "w-full bg-emerald-500";
+                          return "w-0 bg-slate-200";
+                        })()}`}
+                      ></div>
                     </div>
-                    <div className="text-xs text-slate-500 mt-2">Status: {interviews.find(x => x.interview_id === selectedSetupInterviewId)?.status}</div>
+                    <div className="text-xs text-slate-500 mt-2">
+                      Status:{" "}
+                      {
+                        interviews.find(
+                          (x) => x.interview_id === selectedSetupInterviewId
+                        )?.status
+                      }
+                    </div>
                   </div>
                 </div>
               )}
@@ -3844,175 +4286,94 @@ const App = () => {
           {/* Page Header */}
           <div className="text-center">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-blue-800 bg-clip-text text-transparent mb-4">
-              Live Interview Platform
+              Welcome, Himanshu to the interview
             </h1>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-              Conduct AI-powered interviews with real-time feedback and
-              comprehensive analysis
+              We wish you the best of luck! Remember to stay calm, think
+              clearly, and showcase your skills effectively.
             </p>
           </div>
 
           {/* Interview Setup Card */}
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
-                    />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-bold text-white">
-                  Interview Setup
-                </h2>
-              </div>
-            </div>
-
-            <div className="p-8">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* Selected Job Card */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2V6z"
-                        />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                      Selected Job Position
-                    </h3>
+              <div className="flex justify-between items-center space-x-3">
+                <div className="flex flex-wrap gap-4">
+                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <svg
+                      className="w-6 h-6 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                      />
+                    </svg>
                   </div>
-                  <div className="text-2xl font-bold text-blue-700 mb-2">
+                  <h2 className="text-2xl font-bold text-white">
                     {selectedJobId
                       ? jobDescriptions.find((j) => j.id === selectedJobId)
                           ?.title || "Unknown Position"
-                      : "No Job Selected"}
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    {selectedJobId
-                      ? jobDescriptions.find((j) => j.id === selectedJobId)
-                          ?.company || "Company not specified"
-                      : "Please select a job position from the Job Descriptions section"}
-                  </p>
+                      : // : "No Job Selected"}
+                        "GenAI Specialist"}
+                  </h2>
                 </div>
-
-                {/* Selected Candidate Card */}
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-6 border border-emerald-200">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                        />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                      Selected Candidate
-                    </h3>
-                  </div>
-                  <div className="text-2xl font-bold text-emerald-700 mb-2">
-                    {selectedResumeId
-                      ? resumes.find((r) => r.id === selectedResumeId)
-                          ?.candidate_name || "Unknown Candidate"
-                      : "No Candidate Selected"}
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    {selectedResumeId
-                      ? `${
-                          resumes.find((r) => r.id === selectedResumeId)
-                            ?.experience_years || 0
-                        } years of experience`
-                      : "Please select a candidate from the Candidates section"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Create Interview Button */}
-              <div className="text-center">
-                <button
-                  onClick={createInterview}
-                  disabled={!selectedJobId || !selectedResumeId}
-                  className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold text-lg rounded-xl shadow-lg hover:from-emerald-700 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 transition-all duration-200"
-                >
-                  <svg
-                    className="w-6 h-6 mr-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    type="button"
+                    onClick={() => void handleConnect()}
+                    disabled={status === "connected" || status === "connecting"}
+                    className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-medium rounded-lg shadow-sm hover:from-emerald-700 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Create Interview Session
-                </button>
-                {(!selectedJobId || !selectedResumeId) && (
-                  <p className="mt-3 text-sm text-amber-600 bg-amber-50 px-4 py-2 rounded-lg inline-block">
-                    ⚠️ Please select both a job position and a candidate to
-                    start the interview
-                  </p>
-                )}
+                    <svg
+                      className="w-5 h-5 mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    Start Interview
+                    {/* {connectionMode === "webrtc" ? "(WebRTC)" : "(WebSocket)"} */}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnect()}
+                    disabled={status === "disconnected"}
+                    className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-red-600 to-pink-600 text-white font-medium rounded-lg shadow-sm hover:from-red-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  >
+                    <svg
+                      className="w-5 h-5 mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                    Disconnect
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Connection Controls */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-8 py-6">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
-                    />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-bold text-white">
-                  Connection Settings
-                </h2>
-              </div>
-            </div>
-
+          {/* <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
             <div className="p-8">
-              {/* Connection Mode Selector */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-700 mb-3">
                   Connection Type
@@ -4046,7 +4407,6 @@ const App = () => {
                 </p>
               </div>
 
-              {/* Server URL Input */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-700 mb-3">
                   {connectionMode === "webrtc" ? "WebRTC Server URL" : "WebSocket Server URL"}
@@ -4072,7 +4432,6 @@ const App = () => {
                 )}
               </div>
 
-              {/* Connection Buttons */}
               <div className="flex flex-wrap gap-4 mb-8">
                 <button
                   type="button"
@@ -4118,9 +4477,7 @@ const App = () => {
                 </button>
               </div>
 
-              {/* Status Information Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Look-away Warnings */}
                 <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-6 border border-amber-200">
                   <div className="flex items-center space-x-3 mb-3">
                     <div className="w-8 h-8 bg-amber-600 rounded-lg flex items-center justify-center">
@@ -4158,7 +4515,6 @@ const App = () => {
                   </p>
                 </div>
 
-                {/* Send Rate */}
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                   <div className="flex items-center space-x-3 mb-3">
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -4184,7 +4540,6 @@ const App = () => {
                   <p className="text-sm text-slate-600 mt-1">Hz</p>
                 </div>
 
-                {/* Receive Rate */}
                 <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-6 border border-emerald-200">
                   <div className="flex items-center space-x-3 mb-3">
                     <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
@@ -4213,9 +4568,10 @@ const App = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
+
           {/* Interview Context */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
+          {/* <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden">
             <div className="bg-gradient-to-r from-indigo-600 to-blue-700 px-8 py-6">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
@@ -4241,7 +4597,6 @@ const App = () => {
 
             <div className="p-8">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* Resume Section */}
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
@@ -4272,7 +4627,6 @@ const App = () => {
                   />
                 </div>
 
-                {/* Job Description Section */}
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -4306,7 +4660,6 @@ const App = () => {
                 </div>
               </div>
 
-              {/* Context Actions */}
               <div className="flex flex-col items-center space-y-4">
                 <button
                   type="button"
@@ -4360,7 +4713,10 @@ const App = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
+
+          {/* Code Editor */}
+          <VimMonacoEditor />
 
           {/* Session Handle */}
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/60 p-8">
@@ -4751,45 +5107,69 @@ const App = () => {
         */}
         </section>
       )}
-      
+
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {toasts.map((toast) => (
           <div
             key={toast.id}
             className={`min-w-80 max-w-md p-4 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-300 transform translate-x-0 ${
-              toast.type === 'success' ? 'bg-green-100/90 border border-green-200 text-green-800' :
-              toast.type === 'error' ? 'bg-red-100/90 border border-red-200 text-red-800' :
-              toast.type === 'warning' ? 'bg-yellow-100/90 border border-yellow-200 text-yellow-800' :
-              'bg-blue-100/90 border border-blue-200 text-blue-800'
+              toast.type === "success"
+                ? "bg-green-100/90 border border-green-200 text-green-800"
+                : toast.type === "error"
+                ? "bg-red-100/90 border border-red-200 text-red-800"
+                : toast.type === "warning"
+                ? "bg-yellow-100/90 border border-yellow-200 text-yellow-800"
+                : "bg-blue-100/90 border border-blue-200 text-blue-800"
             }`}
           >
             <div className="flex justify-between items-start">
               <div className="flex items-start space-x-3">
-                <div className={`w-5 h-5 mt-0.5 ${
-                  toast.type === 'success' ? 'text-green-600' :
-                  toast.type === 'error' ? 'text-red-600' :
-                  toast.type === 'warning' ? 'text-yellow-600' :
-                  'text-blue-600'
-                }`}>
-                  {toast.type === 'success' && (
+                <div
+                  className={`w-5 h-5 mt-0.5 ${
+                    toast.type === "success"
+                      ? "text-green-600"
+                      : toast.type === "error"
+                      ? "text-red-600"
+                      : toast.type === "warning"
+                      ? "text-yellow-600"
+                      : "text-blue-600"
+                  }`}
+                >
+                  {toast.type === "success" && (
                     <svg fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   )}
-                  {toast.type === 'error' && (
+                  {toast.type === "error" && (
                     <svg fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   )}
-                  {toast.type === 'warning' && (
+                  {toast.type === "warning" && (
                     <svg fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   )}
-                  {toast.type === 'info' && (
+                  {toast.type === "info" && (
                     <svg fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   )}
                 </div>
@@ -4799,8 +5179,16 @@ const App = () => {
                 onClick={() => dismissToast(toast.id)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <svg
+                  className="w-4 h-4"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </button>
             </div>

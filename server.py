@@ -7,6 +7,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import requests
 
 from fastapi import (
     FastAPI,
@@ -17,6 +18,7 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -416,6 +418,37 @@ async def get_interview_results(interview_id: int):
     except Exception as e:
         logger.error(f"Error fetching interview results {interview_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/interviews/execute-code")
+async def executeCode(request: Request):
+    body = await request.json()
+    if "code" not in body:
+        raise HTTPException(status_code=400, detail="Missing 'code' in request body")
+
+    # https://onecompiler.com/apis/code-execution
+    url = "https://onecompiler-apis.p.rapidapi.com/api/v1/run"
+    assessment_code = "nums = [2, 6, 1, 8, 10, 3]\n"
+
+    payload = {
+        "language": "python",
+        "stdin": "Peter",
+        "files": [{"name": "index.py", "content": assessment_code + body["code"]}],
+    }
+    headers = {
+        "x-rapidapi-key": "18c78317dbmsh41f4b97c51c88ccp15f8e2jsn6002f353c338",
+        "x-rapidapi-host": "onecompiler-apis.p.rapidapi.com",
+        "Content-Type": "application/json",
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    result = response.json()
+    if result['stdout'] == "[1, 2, 3, 6, 8, 10]\n":
+        result['passed'] = True
+    else:
+        result['passed'] = False
+
+    return result
 
 
 # Analytics
