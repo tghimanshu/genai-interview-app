@@ -63,6 +63,8 @@ type Interview = {
   ended_at?: string;
   duration_minutes?: number;
   created_at?: string;
+  interviewer_notes?: string;
+
 };
 
 type InterviewSummary = {
@@ -79,6 +81,7 @@ type InterviewSummary = {
   started_at?: string;
   ended_at?: string;
   duration_minutes?: number;
+  interviewer_notes?: string;
 };
 
 type InterviewResults = {
@@ -488,6 +491,12 @@ const VimMonacoEditor = () => {
 };
 
 const App = () => {
+  const [interviewId, setInterviewId] = useState<string | null>(null);
+  const [interviewSessionDetails, setInterviewSessionDetails] = useState<{
+    interview: Interview | null;
+    resume: Resume | null;
+    job_description: JobDescription | null;
+  } | null>(null);
   // Interview state
   const [status, setStatus] = useState<
     "disconnected" | "connecting" | "connected" | "error"
@@ -513,17 +522,18 @@ const App = () => {
   const [jobDescriptionText, setJobDescriptionText] = useState<string>(() =>
     readStoredText(JD_STORAGE_KEY)
   );
-  const [resumeHandle, setResumeHandle] = useState<string | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    try {
-      return window.localStorage.getItem("resumeHandle");
-    } catch (error) {
-      console.warn("Unable to access localStorage", error);
-      return null;
-    }
-  });
+  const [resumeHandle, setResumeHandle] = useState<string | null>(null);
+  // const [resumeHandle, setResumeHandle] = useState<string | null>(() => {
+  //   if (typeof window === "undefined") {
+  //     return null;
+  //   }
+  //   try {
+  //     return window.localStorage.getItem("resumeHandle");
+  //   } catch (error) {
+  //     console.warn("Unable to access localStorage", error);
+  //     return null;
+  //   }
+  // });
 
   // AI Session state
   const [aiSessionState, setAiSessionState] = useState<AISessionState>({
@@ -560,6 +570,16 @@ const App = () => {
       if (q) return q;
       const parts = location.pathname.split("/").filter(Boolean);
       // /interview/:sessionId
+      // if (parts[0] === "interview" && parts[1]) return parts[1];
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  const getInterviewIdFromLocation = (): string | null => {
+    try {
+      // /interview/:sessionId
+      const parts = location.pathname.split("/").filter(Boolean);
       if (parts[0] === "interview" && parts[1]) return parts[1];
       return null;
     } catch {
@@ -570,8 +590,29 @@ const App = () => {
   // If location includes a session id, make sure resumeHandle is set so interview can resume
   useEffect(() => {
     const sid = getSessionIdFromLocation();
+    const intid = getInterviewIdFromLocation();
+
+    const getInterviewSessionDetails = async () => {
+      const interviewDetails = await fetch(
+        `http://localhost:8000/api/interview-session/${intid}`
+      )
+        .then((res) => res.json())
+        .catch((err) => {
+          console.error("Error fetching interview session details:", err);
+          return null;
+        });
+        setInterviewSessionDetails(interviewDetails);
+        setResumeText(interviewDetails?.resume?.resume_text || "");
+        setSelectedResumeId(interviewDetails?.resume?.id || null);
+        setSelectedJobId(interviewDetails?.job_description?.id || null);
+        setJobDescriptionText(interviewDetails?.job_description?.description_text || "");
+        console.log("Fetched interview details:", interviewDetails);
+    }
+    getInterviewSessionDetails();
+
     if (sid) {
       setResumeHandle(sid);
+      setInterviewId(intid);
       resumeHandleRef.current = sid;
       // keep current view as interview
       setCurrentView("interview");
@@ -1270,6 +1311,7 @@ const App = () => {
                 type: "context",
                 resumeText: trimmedResume,
                 jobDescriptionText: trimmedJobDescription,
+                interviewSessionId: interviewId ? interviewId : undefined,
               })
             );
           }
@@ -1534,6 +1576,7 @@ const App = () => {
         apiCall("/api/interviews"),
       ]);
       setDatabaseStats(statsData);
+      console.log("Interviews:", interviewsData)
       setInterviews(interviewsData.interviews || []);
     } catch (err) {
       setError(
@@ -3976,8 +4019,9 @@ const App = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-1 bg-white rounded-xl p-6 border">
+          <div>
+          {/* <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> */}
+            <div className="bg-white rounded-xl p-6 border">
               <h3 className="font-medium mb-3">Scheduled Interviews</h3>
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {interviews.length === 0 && (
@@ -4015,12 +4059,21 @@ const App = () => {
                         ? new Date(iv.started_at).toLocaleString()
                         : iv.interview_id}
                     </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Link: 
+                      <a href={`${window.location.origin}/interview/${iv.session_id}`} className="text-blue-600 hover:underline">
+                        {window.location.origin}/interview/{iv.session_id}
+                      </a>
+                    </div>
+                    <div className="text-sm">
+                      {iv?.interviewer_notes}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="col-span-2 bg-white rounded-xl p-6 border">
+            {/* <div className="col-span-2 bg-white rounded-xl p-6 border">
               <h3 className="font-medium mb-4">Interview Controls</h3>
               {!selectedSetupInterviewId ? (
                 <div className="text-sm text-slate-500">
@@ -4105,7 +4158,6 @@ const App = () => {
                     <h4 className="text-sm font-medium text-slate-700 mb-2">
                       Progress
                     </h4>
-                    {/* Simple progress indicator based on status */}
                     <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden">
                       <div
                         className={`h-4 rounded-full transition-all duration-300 ${(() => {
@@ -4134,7 +4186,7 @@ const App = () => {
                   </div>
                 </div>
               )}
-            </div>
+            </div> */}
           </div>
         </div>
       )}
@@ -4286,7 +4338,7 @@ const App = () => {
           {/* Page Header */}
           <div className="text-center">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-blue-800 bg-clip-text text-transparent mb-4">
-              Welcome, Himanshu to the interview
+              Welcome, {interviewSessionDetails?.resume?.candidate_name} to the interview
             </h1>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
               We wish you the best of luck! Remember to stay calm, think
@@ -4315,11 +4367,13 @@ const App = () => {
                     </svg>
                   </div>
                   <h2 className="text-2xl font-bold text-white">
-                    {selectedJobId
+                    {interviewSessionDetails?.job_description 
+                      ? interviewSessionDetails.job_description.title
+                      : "No Job Selected"}
+                    {/* {selectedJobId
                       ? jobDescriptions.find((j) => j.id === selectedJobId)
                           ?.title || "Unknown Position"
-                      : // : "No Job Selected"}
-                        "GenAI Specialist"}
+                      :  "No Job Selected"} */}
                   </h2>
                 </div>
                 <div className="flex flex-wrap gap-4">

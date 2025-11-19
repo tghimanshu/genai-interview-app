@@ -365,6 +365,28 @@ class InterviewDatabaseOps:
             logger.error(f"Error updating interview status: {e}")
             return False
 
+    def update_interview_using_session_id(self, session_id: str, updates: Dict[str, Any]) -> bool:
+        """Update interview with arbitrary fields"""
+        try:
+            set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])
+            query = f"""
+            UPDATE interviews 
+            SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+            WHERE session_id = ?
+            """
+
+            params = list(updates.values()) + [session_id]
+            success = self.db_manager.execute_update(query, tuple(params))
+
+            if success:
+                self.log_system_event("interview_updated", "interview", session_id)
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error updating interview: {e}")
+            return False
+
     def update_interview(self, interview_id: int, updates: Dict[str, Any]) -> bool:
         """Update interview with arbitrary fields"""
         try:

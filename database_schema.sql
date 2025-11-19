@@ -14,9 +14,24 @@ CREATE TABLE job_descriptions (
     experience_level VARCHAR(50),
     location VARCHAR(255),
     salary_range VARCHAR(100),
+    has_assessment BOOLEAN DEFAULT FALSE,
+    assessment_tags TEXT, -- JSON array of tags
+    assessment_difficulty VARCHAR(20), -- 'easy', 'medium', 'hard'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE assessment_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_title TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    difficulty_level VARCHAR(20), -- 'easy', 'medium', 'hard'
+    tags TEXT, -- JSON array of tags
+    run_code_template TEXT,
+    submit_code_template TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 );
 
 -- Table to store candidate resumes
@@ -191,6 +206,7 @@ SELECT
     i.session_id,
     i.interview_link,
     i.status,
+    i.*,
     jd.title as job_title,
     jd.company,
     r.candidate_name,

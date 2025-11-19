@@ -388,8 +388,31 @@ async def create_interview(interview_data: InterviewCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@app.get("/api/interview-session/{session_id}")
+async def get_interview_details(session_id: str):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    try:
+        db_ops = InterviewDatabaseOps()
+        interview_details = db_ops.get_interview_by_session(session_id)
+        jd = db_ops.get_job_description(interview_details["job_description_id"])
+        resume = db_ops.get_resume(interview_details["resume_id"])
+        if not interview_details:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        return {
+            "interview": interview_details,
+            "job_description": jd,
+            "resume": resume,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching interview details {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/interviews/{interview_id}")
-async def get_interview_details(interview_id: int):
+async def get_interview_details(interview_id: str):
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -443,10 +466,10 @@ async def executeCode(request: Request):
 
     response = requests.post(url, json=payload, headers=headers)
     result = response.json()
-    if result['stdout'] == "[1, 2, 3, 6, 8, 10]\n":
-        result['passed'] = True
+    if result["stdout"] == "[1, 2, 3, 6, 8, 10]\n":
+        result["passed"] = True
     else:
-        result['passed'] = False
+        result["passed"] = False
 
     return result
 
@@ -831,6 +854,7 @@ class WebSocketInterviewSession:
         self._shutdown_reason: Optional[str] = None
         self._interview_context: Dict[str, Any] = {}
         self._look_away_warnings_sent = 0
+        self._interview_session_id = None
 
     async def run(self) -> None:
         await self.websocket.accept()
@@ -849,6 +873,9 @@ class WebSocketInterviewSession:
                     message = await self.websocket.receive_json()
                     if message.get("type") == "context":
                         # session_context.update(message.get("context", {}))
+                        self._interview_session_id = message.get("interviewSessionId")
+                        self._job_description_text = message.get("jobDescriptionText")
+                        self._resume_text = message.get("resumeText")
                         enhanced_prompt = get_enhanced_ai_config(
                             message.get(
                                 "jobDescriptionText", self._job_description_text
@@ -1093,6 +1120,7 @@ class WebSocketInterviewSession:
                     continue
                 async with self._mic_lock:
                     self._candidate_chunks.extend(pcm)
+                    # Pass to AI to get transcribed/processed
                 await self.session.send_realtime_input(
                     media={"data": pcm, "mime_type": "audio/pcm"}
                 )
@@ -1527,6 +1555,29 @@ Score the candidate based on the following criteria:
 5. Overall Impression: Provide an overall score based on the candidate's performance during the interview.
 
 Give reasons and key takeaways for each criteria. Provide separate scores (out of 10) for resume match and interview performance, then give a final averaged score out of 10.
+FORMAT: ```json
+{
+  "technical_skills": {
+    "score": int,
+    "reasoning": str,
+    },
+    "problem_solving_ability": {
+    "score": int,
+    "reasoning": str,
+    },
+    "communication_skills": {
+    "score": int,
+    "reasoning": str,
+    },
+    "cultural_fit": {
+    "score": int,
+    "reasoning": str,
+    },
+    "overall_impression": {
+    "score": int,
+    "reasoning": str,
+    },
+}
 """
 
             response = client.models.generate_content(
@@ -1542,7 +1593,19 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
                 },
             )
 
+            my_score = response.text.split("```json")[-1]
+            my_score = my_score.split("```")[0]
+
             score_path.write_text(response.text or "", encoding="utf-8")
+
+            db_ops = InterviewDatabaseOps()
+            db_ops.update_interview_using_session_id(
+                self._interview_session_id,
+                {
+                    "interviewer_notes": my_score,
+                    "status": "completed",
+                })
+
             logger.info("Final evaluation written to %s", score_path)
         except Exception as exc:
             logger.warning("Failed to generate candidate score: %s", exc)
