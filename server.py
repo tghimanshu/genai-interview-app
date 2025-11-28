@@ -1,3 +1,23 @@
+"""
+FastAPI Server for the Live Interview Application.
+
+This module provides the backend API and WebSocket endpoints for the interview application.
+It handles:
+- REST API endpoints for managing Job Descriptions, Resumes, Interviews, and Match Ratings.
+- WebSocket endpoint for the live interview session, managing audio/video streaming and
+  interaction with the Gemini Live API.
+- WebRTC signaling endpoint for enhanced media streaming.
+- Database integration for persistent storage.
+- Email notifications for interview scheduling and completion.
+
+Dependencies:
+    - FastAPI
+    - Uvicorn
+    - Google GenAI
+    - OpenCV
+    - Pydantic
+"""
+
 import asyncio
 import base64
 import json
@@ -67,6 +87,7 @@ except ImportError:
 
 # Pydantic models for API requests
 class JobDescriptionCreate(BaseModel):
+    """Schema for creating a new job description."""
     title: str
     company: str
     description_text: str
@@ -78,6 +99,7 @@ class JobDescriptionCreate(BaseModel):
 
 
 class ResumeCreate(BaseModel):
+    """Schema for creating a new resume manually."""
     candidate_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -88,6 +110,7 @@ class ResumeCreate(BaseModel):
 
 
 class InterviewCreate(BaseModel):
+    """Schema for scheduling a new interview."""
     job_description_id: int
     resume_id: int
     session_id: str
@@ -116,11 +139,23 @@ app.add_middleware(
 
 @app.get("/health")
 async def healthcheck() -> Dict[str, str]:
+    """
+    Health check endpoint.
+
+    Returns:
+        Dict[str, str]: A dictionary containing the status of the server.
+    """
     return {"status": "ok"}
 
 
 @app.get("/")
 async def home() -> Dict[str, str]:
+    """
+    Home endpoint.
+
+    Returns:
+        Dict[str, str]: A simple status message.
+    """
     return {"status": "ok"}
 
 
@@ -130,6 +165,15 @@ async def home() -> Dict[str, str]:
 # Job Descriptions
 @app.get("/api/jobs")
 async def get_job_descriptions(response: Response):
+    """
+    Retrieve all active job descriptions.
+
+    Args:
+        response (Response): The FastAPI response object, used to set cache headers.
+
+    Returns:
+        dict: A dictionary containing a list of job descriptions.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -148,6 +192,15 @@ async def get_job_descriptions(response: Response):
 
 @app.post("/api/jobs")
 async def create_job_description(job_data: JobDescriptionCreate):
+    """
+    Create a new job description.
+
+    Args:
+        job_data (JobDescriptionCreate): The job description data.
+
+    Returns:
+        dict: A dictionary containing the ID of the created job and a success message.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -173,6 +226,15 @@ async def create_job_description(job_data: JobDescriptionCreate):
 
 @app.get("/api/jobs/{job_id}")
 async def get_job_description(job_id: int):
+    """
+    Retrieve a specific job description by ID.
+
+    Args:
+        job_id (int): The ID of the job description.
+
+    Returns:
+        dict: The job description details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -190,6 +252,15 @@ async def get_job_description(job_id: int):
 # Resumes/Candidates
 @app.get("/api/resumes")
 async def get_resumes(response: Response):
+    """
+    Retrieve all active resumes.
+
+    Args:
+        response (Response): The FastAPI response object, used to set cache headers.
+
+    Returns:
+        dict: A dictionary containing a list of resumes.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -208,6 +279,15 @@ async def get_resumes(response: Response):
 
 @app.post("/api/resumes")
 async def create_resume(resume_data: ResumeCreate):
+    """
+    Create a new resume manually.
+
+    Args:
+        resume_data (ResumeCreate): The resume data.
+
+    Returns:
+        dict: A dictionary containing the ID of the created resume and a success message.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -236,9 +316,18 @@ async def upload_resume(
     email: Optional[str] = Form(None),
     resume_file: UploadFile = File(...),
 ):
-    """Upload a resume file and create a resume record.
-    - text files will be read into resume_text
-    - other files (pdf, docx) will be stored and path saved in resume_pdf_path
+    """
+    Upload a resume file and create a resume record.
+
+    Parses the uploaded file (PDF, DOCX, TXT) to extract text and details.
+
+    Args:
+        candidate_name (str): The name of the candidate.
+        email (Optional[str]): The candidate's email.
+        resume_file (UploadFile): The resume file.
+
+    Returns:
+        dict: A dictionary containing the ID of the created resume and a success message.
     """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -300,6 +389,15 @@ async def upload_resume(
 
 @app.get("/api/resumes/{resume_id}")
 async def get_resume(resume_id: int):
+    """
+    Retrieve a specific resume by ID.
+
+    Args:
+        resume_id (int): The ID of the resume.
+
+    Returns:
+        dict: The resume details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -317,6 +415,12 @@ async def get_resume(resume_id: int):
 # Interviews
 @app.get("/api/interviews")
 async def get_interviews():
+    """
+    Retrieve all interviews.
+
+    Returns:
+        dict: A dictionary containing a list of interviews (limit 50).
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -332,6 +436,17 @@ async def get_interviews():
 
 @app.post("/api/interviews")
 async def create_interview(interview_data: InterviewCreate):
+    """
+    Schedule a new interview.
+
+    Creates an interview record and sends an email invitation to the candidate.
+
+    Args:
+        interview_data (InterviewCreate): The interview scheduling data.
+
+    Returns:
+        dict: A dictionary containing the ID of the created interview and a success message.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -362,6 +477,17 @@ async def create_interview(interview_data: InterviewCreate):
 
 @app.get("/api/interviews/{interview_id}")
 async def get_interview_details(interview_id: int):
+    """
+    Retrieve full details of an interview.
+
+    Includes related job description, resume, recordings, and scores.
+
+    Args:
+        interview_id (int): The ID of the interview.
+
+    Returns:
+        dict: The complete interview details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -378,6 +504,15 @@ async def get_interview_details(interview_id: int):
 
 @app.get("/api/interviews/{interview_id}/results")
 async def get_interview_results(interview_id: int):
+    """
+    Retrieve summary results of an interview.
+
+    Args:
+        interview_id (int): The ID of the interview.
+
+    Returns:
+        dict: The interview summary.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -395,6 +530,12 @@ async def get_interview_results(interview_id: int):
 # Analytics
 @app.get("/api/analytics/stats")
 async def get_analytics_stats():
+    """
+    Retrieve dashboard analytics statistics.
+
+    Returns:
+        dict: A dictionary containing total jobs, candidates, interviews, and average score.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -434,6 +575,16 @@ async def get_analytics_stats():
 # UPDATE endpoints
 @app.put("/api/jobs/{job_id}")
 async def update_job_description(job_id: int, job_data: JobDescriptionCreate):
+    """
+    Update an existing job description.
+
+    Args:
+        job_id (int): The ID of the job to update.
+        job_data (JobDescriptionCreate): The updated job data.
+
+    Returns:
+        dict: The updated job description.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -460,6 +611,16 @@ async def update_job_description(job_id: int, job_data: JobDescriptionCreate):
 
 @app.put("/api/resumes/{resume_id}")
 async def update_resume(resume_id: int, resume_data: ResumeCreate):
+    """
+    Update an existing resume.
+
+    Args:
+        resume_id (int): The ID of the resume to update.
+        resume_data (ResumeCreate): The updated resume data.
+
+    Returns:
+        dict: The updated resume.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -505,6 +666,19 @@ async def update_resume(resume_id: int, resume_data: ResumeCreate):
 
 @app.put("/api/interviews/{interview_id}/status")
 async def update_interview_status(interview_id: int, status_data: dict):
+    """
+    Update the status of an interview.
+
+    Can handle statuses like 'scheduled', 'in_progress', 'completed'.
+    If completed, triggers an email notification to the candidate.
+
+    Args:
+        interview_id (int): The ID of the interview.
+        status_data (dict): Dictionary containing the new "status".
+
+    Returns:
+        dict: The updated interview details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -555,7 +729,19 @@ async def update_interview_status(interview_id: int, status_data: dict):
 
 @app.put("/api/interviews/{interview_id}")
 async def update_interview(interview_id: int, updates: dict):
-    """Update arbitrary interview fields (scheduled_at, duration_minutes, interviewer_notes, etc.)"""
+    """
+    Update arbitrary interview fields.
+
+    Allowed fields: scheduled_at, started_at, ended_at, duration_minutes,
+    interviewer_notes, candidate_feedback, status.
+
+    Args:
+        interview_id (int): The ID of the interview.
+        updates (dict): The fields to update.
+
+    Returns:
+        dict: The updated interview details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -598,6 +784,17 @@ async def update_interview(interview_id: int, updates: dict):
 # DELETE endpoints
 @app.delete("/api/jobs/{job_id}")
 async def delete_job_description(job_id: int):
+    """
+    Soft delete a job description.
+
+    Sets is_active to False.
+
+    Args:
+        job_id (int): The ID of the job to delete.
+
+    Returns:
+        dict: A success message.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -620,6 +817,17 @@ async def delete_job_description(job_id: int):
 
 @app.delete("/api/resumes/{resume_id}")
 async def delete_resume(resume_id: int):
+    """
+    Soft delete a resume.
+
+    Sets is_active to False.
+
+    Args:
+        resume_id (int): The ID of the resume to delete.
+
+    Returns:
+        dict: A success message.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -643,6 +851,15 @@ async def delete_resume(resume_id: int):
 # SEARCH endpoints
 @app.get("/api/search/candidates")
 async def search_candidates(q: str):
+    """
+    Search for candidates by name or email.
+
+    Args:
+        q (str): The search query.
+
+    Returns:
+        dict: A dictionary containing a list of matching candidates.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -658,6 +875,15 @@ async def search_candidates(q: str):
 
 @app.get("/api/search/jobs")
 async def search_jobs(q: str):
+    """
+    Search for jobs by title or company.
+
+    Args:
+        q (str): The search query.
+
+    Returns:
+        dict: A dictionary containing a list of matching jobs.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -685,6 +911,15 @@ async def search_jobs(q: str):
 # MATCH RATING endpoints
 @app.post("/api/match-rating")
 async def create_match_rating(rating_data: dict):
+    """
+    Create or update a match rating between a job and a resume.
+
+    Args:
+        rating_data (dict): The match rating data (job_id, resume_id, score, etc).
+
+    Returns:
+        dict: The ID of the created/updated match rating.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -722,6 +957,16 @@ async def create_match_rating(rating_data: dict):
 
 @app.get("/api/match-rating/{job_id}/{resume_id}")
 async def get_match_rating(job_id: int, resume_id: int):
+    """
+    Retrieve a specific match rating.
+
+    Args:
+        job_id (int): The job ID.
+        resume_id (int): The resume ID.
+
+    Returns:
+        dict: The match rating details.
+    """
     if not DATABASE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Database not available")
 
@@ -742,6 +987,16 @@ async def get_match_rating(job_id: int, resume_id: int):
 
 
 class WebSocketInterviewSession:
+    """
+    Manages a single WebSocket interview session.
+
+    Handles the lifecycle of the interview, including:
+    - Establishing connection with Gemini Live API.
+    - Routing audio/text/image data between client and model.
+    - Monitoring candidate attention (look-away detection).
+    - Recording audio streams and generating transcripts.
+    - Handling session interruptions and resumption.
+    """
     def __init__(
         self, websocket: WebSocket, resume_handle: Optional[str] = None
     ) -> None:
@@ -774,6 +1029,12 @@ class WebSocketInterviewSession:
         self._look_away_warnings_sent = 0
 
     async def run(self) -> None:
+        """
+        Runs the interview session.
+
+        Accepts the WebSocket connection, initializes the AI session, and manages
+        the message forwarding loops. Handles exceptions and cleanup.
+        """
         await self.websocket.accept()
         try:
             # Build enhanced AI configuration
@@ -900,6 +1161,12 @@ class WebSocketInterviewSession:
             await self._safe_close()
 
     async def _flush_recordings(self) -> None:
+        """
+        Saves all buffered audio and transcripts to disk.
+
+        Creates WAV files for assistant and candidate audio, mixes them,
+        and saves transcripts to a JSONL file. Notifies client with paths.
+        """
         assistant_pcm: bytes = b""
         candidate_pcm: bytes = b""
         async with self._audio_lock:
@@ -988,6 +1255,16 @@ class WebSocketInterviewSession:
             )
 
     async def _forward_client_messages(self) -> None:
+        """
+        Reads messages from the WebSocket and forwards them to the Gemini Live session.
+
+        Handles various message types:
+        - audio: Candidate audio data.
+        - image: Camera frames (also processes for face detection).
+        - text: Text messages.
+        - context: Updates to resume/job description context.
+        - control: Session control signals (e.g., stop).
+        """
         assert self.session is not None
         while True:
             if self._shutdown_reason:
@@ -1072,6 +1349,15 @@ class WebSocketInterviewSession:
                 break
 
     async def _process_frame(self, base64_frame: str) -> None:
+        """
+        Process a single video frame for face detection.
+
+        Decodes the base64 frame, detects faces using Haar cascades, and tracks
+        if the candidate is looking away. Sends warnings if thresholds are exceeded.
+
+        Args:
+            base64_frame (str): The base64 encoded image frame.
+        """
         if self._face_cascade.empty() or self._session_terminated:
             return
         try:
@@ -1145,6 +1431,16 @@ class WebSocketInterviewSession:
             return
 
     async def _forward_model_responses(self) -> None:
+        """
+        Reads responses from the Gemini Live session and forwards them to the WebSocket.
+
+        Handles:
+        - Audio data (sent as base64).
+        - Transcripts (input and output).
+        - Text responses.
+        - Session resumption updates.
+        - Sign-off detection.
+        """
         assert self.session is not None
         while True:
             if self._shutdown_reason:
@@ -1217,6 +1513,13 @@ class WebSocketInterviewSession:
                     return
 
     def _record_transcript(self, role: str, payload: Dict[str, Any]) -> None:
+        """
+        Appends a transcript entry to the in-memory list.
+
+        Args:
+            role (str): 'user' or 'assistant'.
+            payload (Dict[str, Any]): The transcript payload.
+        """
         timestamp = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
         entry: Dict[str, Any] = {
             "timestamp": timestamp,
@@ -1229,6 +1532,15 @@ class WebSocketInterviewSession:
         self._transcripts.append(entry)
 
     def _extract_transcript_text(self, payload: Dict[str, Any]) -> Optional[str]:
+        """
+        Extracts plain text from a transcript payload.
+
+        Args:
+            payload (Dict[str, Any]): The transcript payload.
+
+        Returns:
+            Optional[str]: The extracted text, or None.
+        """
         if not payload:
             return None
         if isinstance(payload.get("transcript"), str):
@@ -1263,6 +1575,17 @@ class WebSocketInterviewSession:
         assistant_text: Optional[str],
         message_text: Optional[str],
     ) -> bool:
+        """
+        Checks if the session should be finalized based on model response or sign-off phrases.
+
+        Args:
+            server_content (Optional[genai_types.LiveServerContent]): Server content object.
+            assistant_text (Optional[str]): Text spoken by assistant.
+            message_text (Optional[str]): Text message.
+
+        Returns:
+            bool: True if session should be finalized, False otherwise.
+        """
         if self._shutdown_reason:
             return True
 
@@ -1296,6 +1619,16 @@ class WebSocketInterviewSession:
         *,
         detail: Optional[str] = None,
     ) -> bool:
+        """
+        Flags the session for shutdown and notifies the client.
+
+        Args:
+            reason (str): The reason for shutdown.
+            detail (Optional[str]): Additional details.
+
+        Returns:
+            bool: True.
+        """
         if self._shutdown_reason:
             return False
 
@@ -1327,6 +1660,9 @@ class WebSocketInterviewSession:
         return True
 
     async def _safe_close(self) -> None:
+        """
+        Safely cancels pending tasks and closes the WebSocket connection.
+        """
         for task in self._tasks:
             # if not task.done():
             #     task.cancel()
@@ -1336,6 +1672,14 @@ class WebSocketInterviewSession:
             await self.websocket.close()
 
     def _write_wav(self, path: Path, pcm: bytes, sample_rate: int) -> None:
+        """
+        Writes PCM data to a WAV file.
+
+        Args:
+            path (Path): Output path.
+            pcm (bytes): PCM data.
+            sample_rate (int): Sample rate.
+        """
         with wave.open(str(path), "wb") as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
@@ -1345,6 +1689,14 @@ class WebSocketInterviewSession:
     def _mix_wavs(
         self, assistant_path: Path, candidate_path: Path, mix_path: Path
     ) -> None:
+        """
+        Mixes assistant and candidate WAV files into a single mono track.
+
+        Args:
+            assistant_path (Path): Path to assistant WAV.
+            candidate_path (Path): Path to candidate WAV.
+            mix_path (Path): Output path for mixed WAV.
+        """
         try:
             with wave.open(str(assistant_path), "rb") as assistant_wav, wave.open(
                 str(candidate_path), "rb"
@@ -1383,6 +1735,13 @@ class WebSocketInterviewSession:
             logger.warning("Failed to mix wav files: %s", exc)
 
     def _write_transcripts(self, path: Path, transcripts: List[Dict[str, Any]]) -> None:
+        """
+        Writes transcripts to a JSONL file and triggers formatting/scoring.
+
+        Args:
+            path (Path): Output path for JSONL.
+            transcripts (List[Dict[str, Any]]): List of transcript entries.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as outfile:
             for entry in transcripts:
@@ -1395,6 +1754,13 @@ class WebSocketInterviewSession:
     def _format_transcript_and_score(
         self, path: Path, transcripts: List[Dict[str, Any]]
     ) -> None:
+        """
+        Formats the transcript into a readable text file and uses GenAI to score the candidate.
+
+        Args:
+            path (Path): Path to the source transcript file.
+            transcripts (List[Dict[str, Any]]): Transcript data.
+        """
         formatted_path = (
             path.parent / f"{self._session_prefix}_formatted_transcript.txt"
         )
@@ -1495,6 +1861,13 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
         resume_text: Optional[str],
         job_description_text: Optional[str],
     ) -> None:
+        """
+        Updates the interview context (resume/job description) dynamically.
+
+        Args:
+            resume_text (Optional[str]): New resume text.
+            job_description_text (Optional[str]): New job description text.
+        """
         updated_fields: List[str] = []
 
         if isinstance(resume_text, str):
@@ -1550,6 +1923,12 @@ Give reasons and key takeaways for each criteria. Provide separate scores (out o
 
 @app.websocket("/ws/interview")
 async def interview_endpoint(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for handling live interview sessions.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+    """
     resume_handle = websocket.query_params.get("resume")
 
     # Validate and sanitize the resume handle
@@ -1579,6 +1958,12 @@ async def interview_endpoint(websocket: WebSocket) -> None:
 
 @app.websocket("/ws/webrtc")
 async def webrtc_endpoint(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for WebRTC signaling.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+    """
     """WebRTC signaling endpoint for better audio/video performance"""
     await websocket.accept()
     session_id = None
@@ -1611,5 +1996,14 @@ async def webrtc_endpoint(websocket: WebSocket) -> None:
 
 @app.exception_handler(Exception)
 async def global_exception_handler(_, exc: Exception):  # pylint: disable=broad-except
+    """
+    Global exception handler to catch unhandled errors and return a 500 response.
+
+    Args:
+        exc (Exception): The caught exception.
+
+    Returns:
+        JSONResponse: 500 Internal Server Error.
+    """
     logger.exception("Unhandled exception", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})

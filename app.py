@@ -1,20 +1,21 @@
 """
-## Documentation
-Quickstart: https://github.com/google-gemini/cookbook/blob/main/quickstarts/Get_started_LiveAPI.py
+Live Audio/Video Client for Gemini Live API.
 
-## Setup
+This module provides a client application that interacts with the Gemini Live API
+to conduct real-time audio and video sessions. It handles audio capture (microphone),
+video capture (camera or screen), and audio playback, synchronized with the AI model.
 
-To install the dependencies for this script, run:
+The main component is the `AudioLoop` class which manages the asyncio event loop
+for sending and receiving data streams.
 
-```
-pip install google-genai opencv-python pyaudio pillow mss
-# Optional for MP3 export
-pip install pydub
-```
-Note: For MP3 export you also need FFmpeg installed and on PATH.
-Windows: download from https://ffmpeg.org/download.html and add the bin folder to PATH.
-ref:
-https://www.tutorialspoint.com/how-to-detect-eyes-in-an-image-using-opencv-python
+Dependencies:
+    - google-genai
+    - opencv-python
+    - pyaudio
+    - pillow
+    - mss
+    - pydub (optional, for MP3 export)
+    - ffmpeg (optional, for MP3 export)
 """
 
 import os
@@ -63,7 +64,22 @@ pya = pyaudio.PyAudio()
 
 
 class AudioLoop:
+    """
+    Manages the audio/video loop for the live session.
+
+    This class handles the initialization of audio streams, video capture,
+    and the WebSocket connection to the Gemini Live API. It coordinates
+    sending user input (audio/video/text) and receiving/playing model output.
+    """
+
     def __init__(self, video_mode=DEFAULT_MODE):
+        """
+        Initialize the AudioLoop.
+
+        Args:
+            video_mode (str): The video source mode. Options are "camera", "screen", or "none".
+                              Defaults to "camera".
+        """
         self.video_mode = video_mode
 
         self.audio_in_queue = None
@@ -85,6 +101,12 @@ class AudioLoop:
         self._recordings_dir.mkdir(exist_ok=True)
 
     async def send_text(self):
+        """
+        Asynchronously reads text input from the console and sends it to the session.
+
+        This allows the user to send text messages to the model during the audio/video session.
+        Type 'q' to quit the text input loop (does not stop the session).
+        """
         while True:
             text = await asyncio.to_thread(
                 input,
@@ -103,6 +125,19 @@ class AudioLoop:
             )
 
     def _get_frame(self, cap):
+        """
+        Captures and processes a single video frame.
+
+        Reads a frame from the video capture device, converts it to RGB,
+        detects faces/eyes to monitor attention, and encodes the image to base64.
+
+        Args:
+            cap (cv2.VideoCapture): The OpenCV video capture object.
+
+        Returns:
+            dict: A dictionary containing the mime type and base64 encoded image data,
+                  or None if frame capture fails.
+        """
         # Read the frameq
         ret, frame = cap.read()
         # Check if the frame was read successfully
@@ -140,6 +175,13 @@ class AudioLoop:
         return {"mime_type": mime_type, "data": base64.b64encode(image_bytes).decode()}
 
     async def get_frames(self):
+        """
+        Continuous loop to capture frames from the camera.
+
+        Captures frames using `_get_frame`, monitors user attention (looking away),
+        sends warnings to the model if the user looks away too often, and puts
+        valid frames into the output queue for transmission.
+        """
         # This takes about a second, and will block the whole program
         # causing the audio pipeline to overflow if you don't to_thread it.
         cap = await asyncio.to_thread(
@@ -184,6 +226,14 @@ class AudioLoop:
         cv2.destroyAllWindows()
 
     def _get_screen(self):
+        """
+        Captures a screenshot of the primary monitor.
+
+        Uses `mss` to grab the screen content and converts it to a base64 encoded JPEG.
+
+        Returns:
+            dict: A dictionary containing the mime type and base64 encoded image data.
+        """
         sct = mss.mss()
         monitor = sct.monitors[0]
 
@@ -201,6 +251,12 @@ class AudioLoop:
         return {"mime_type": mime_type, "data": base64.b64encode(image_bytes).decode()}
 
     async def get_screen(self):
+        """
+        Continuous loop to capture screen content.
+
+        Captures screenshots using `_get_screen` at 1-second intervals and puts
+        them into the output queue for transmission.
+        """
 
         while True:
             frame = await asyncio.to_thread(self._get_screen)
@@ -212,12 +268,23 @@ class AudioLoop:
             await self.out_queue.put(frame)
 
     async def send_realtime(self):
+        """
+        Sends accumulated media (audio/video/screen) to the session.
+
+        Reads from the `out_queue` and sends the data to the Gemini Live session.
+        """
         while True:
             msg = await self.out_queue.get()
             # await self.session.send(input=msg)
             await self.session.send_realtime_input(media=msg)
 
     async def listen_audio(self):
+        """
+        Captures audio from the microphone.
+
+        Reads audio chunks from the default input device and puts them into the
+        `out_queue` for transmission. Also buffers the audio for recording.
+        """
         mic_info = pya.get_default_input_device_info()
         self.audio_stream = await asyncio.to_thread(
             pya.open,
@@ -241,7 +308,13 @@ class AudioLoop:
                 self._mic_bytes.extend(data)
 
     async def receive_audio(self):
-        "Background task to reads from the websocket and write pcm chunks to the output queue"
+        """
+        Receives audio and text responses from the session.
+
+        Reads turns from the session. Audio data is put into `audio_in_queue` for playback
+        and buffered for recording. Transcriptions are logged to a file. Text responses
+        are printed to the console.
+        """
         while True:
             turn = self.session.receive()
             async for response in turn:
@@ -269,6 +342,11 @@ class AudioLoop:
                 self.audio_in_queue.get_nowait()
 
     async def play_audio(self):
+        """
+        Plays received audio chunks.
+
+        Reads audio data from `audio_in_queue` and writes it to the output stream.
+        """
         stream = await asyncio.to_thread(
             pya.open,
             format=FORMAT,
@@ -281,6 +359,13 @@ class AudioLoop:
             await asyncio.to_thread(stream.write, bytestream)
 
     async def run(self):
+        """
+        Main execution loop for the audio/video session.
+
+        Establishes the connection to the live service, initializes queues,
+        starts all background tasks (send_text, send_realtime, listen_audio,
+        receive_audio, play_audio, video capture), and handles proper shutdown.
+        """
         try:
             async with (
                 client.aio.live.connect(
@@ -336,6 +421,14 @@ class AudioLoop:
                 pass
 
     def _write_wav(self, wav_path: pathlib.Path, pcm_bytes: bytes, sample_rate: int):
+        """
+        Writes PCM audio data to a WAV file.
+
+        Args:
+            wav_path (pathlib.Path): Path to the output WAV file.
+            pcm_bytes (bytes): Raw PCM audio data.
+            sample_rate (int): Sample rate of the audio data.
+        """
         # Write PCM 16-bit mono data to WAV container
         with wave.open(str(wav_path), 'wb') as wf:
             wf.setnchannels(1)
@@ -344,9 +437,27 @@ class AudioLoop:
             wf.writeframes(pcm_bytes)
 
     def _ffmpeg_available(self) -> bool:
+        """
+        Checks if FFmpeg is available in the system PATH.
+
+        Returns:
+            bool: True if FFmpeg is available, False otherwise.
+        """
         return shutil.which("ffmpeg") is not None
 
     def _convert_wav_to_mp3(self, wav_path: pathlib.Path, mp3_path: pathlib.Path) -> bool:
+        """
+        Converts a WAV file to MP3.
+
+        Attempts to use `pydub` first, then falls back to `ffmpeg` CLI.
+
+        Args:
+            wav_path (pathlib.Path): Path to the input WAV file.
+            mp3_path (pathlib.Path): Path to the output MP3 file.
+
+        Returns:
+            bool: True if conversion was successful, False otherwise.
+        """
         # Try pydub first (if available and ffmpeg configured), else fallback to ffmpeg CLI
         try:
             from pydub import AudioSegment  # type: ignore
@@ -367,6 +478,13 @@ class AudioLoop:
             return False
 
     async def _finalize_recordings(self):
+        """
+        Saves and mixes recorded audio buffers to disk.
+
+        This method is called on session exit. It saves the assistant's audio
+        and the microphone audio to WAV files. It then attempts to convert
+        them to MP3 and create a mixed MP3 file of the entire session.
+        """
         print("\nFinalizing recordings...")
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Assistant audio (what we played back)

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Enhanced AI Interview Configuration
-Provides improved prompts and context management for more intelligent interviews
+Enhanced AI Interview Configuration.
+
+Provides improved system prompts and context management functions to enable
+more intelligent, structured, and empathetic AI-driven interviews. It defines
+the persona of the interviewer ("ALEX") and frameworks for conducting the interview
+and assessing the candidate.
 """
 
 ENHANCED_SYSTEM_PROMPT = """
@@ -84,7 +88,18 @@ START THE INTERVIEW NOW with a warm, professional greeting.
 
 def get_enhanced_ai_config(job_description: str, resume: str, session_context: dict = None) -> str:
     """
-    Generate enhanced AI configuration with specific job and candidate context
+    Generate the full enhanced AI system prompt.
+
+    Combines the base system persona with specific context from the job description,
+    candidate resume, and session details.
+
+    Args:
+        job_description (str): The job description text.
+        resume (str): The candidate's resume text.
+        session_context (dict, optional): Additional session metadata (e.g., session ID, type).
+
+    Returns:
+        str: The complete system prompt string.
     """
     context_section = f"""
 📄 INTERVIEW CONTEXT:
@@ -110,7 +125,16 @@ SESSION INFORMATION:
 
 def get_interview_questions_by_role(job_description: str, experience_level: str = "mid") -> list:
     """
-    Generate role-specific interview questions based on job requirements
+    Generate a list of structured interview questions based on the role.
+
+    (Note: Currently returns a static template, but intended to be expanded for dynamic generation).
+
+    Args:
+        job_description (str): The job description.
+        experience_level (str): The candidate's experience level (default: "mid").
+
+    Returns:
+        list: A list of dictionary objects representing questions and follow-ups.
     """
     # This would be enhanced to parse job descriptions and generate targeted questions
     # For now, returning a basic structure
@@ -137,7 +161,11 @@ def get_interview_questions_by_role(job_description: str, experience_level: str 
 
 def get_interview_assessment_criteria() -> dict:
     """
-    Define clear assessment criteria for consistent evaluation
+    Retrieve the standard assessment criteria and weights.
+
+    Returns:
+        dict: A dictionary defining weights and criteria for Technical Competency,
+              Problem Solving, Communication, and Cultural Fit.
     """
     return {
         "technical_competency": {

@@ -1,9 +1,17 @@
 """
-Simple API integration test that simulates UI flows against the backend.
-It performs: health check, create/list/get/update/delete for jobs and resumes,
-create interview, create match rating, get full interview results.
+Simple API integration test simulating UI flows against the backend.
 
-Run this while the backend is running at http://127.0.0.1:8000
+This script performs a sequence of HTTP requests to a running backend server to
+verify the core business logic. It covers:
+- Health check
+- CRUD operations for jobs and resumes
+- Interview creation
+- Match rating generation
+- Fetching full interview results
+- Cleanup (soft deletion)
+
+Prerequisites:
+- The backend server must be running at http://127.0.0.1:8000.
 """
 
 import requests
@@ -15,6 +23,12 @@ BASE = "http://127.0.0.1:8000"
 results = []
 
 def check_health():
+    """
+    Check if the backend server is healthy.
+
+    Returns:
+        bool: True if the server returns 200 OK and status='ok', False otherwise.
+    """
     try:
         r = requests.get(f"{BASE}/health", timeout=5)
         return r.status_code == 200 and r.json().get("status") == "ok"
@@ -24,6 +38,15 @@ def check_health():
 
 
 def pretty(r):
+    """
+    Format response JSON for pretty printing.
+
+    Args:
+        r (requests.Response): The response object.
+
+    Returns:
+        str: Pretty-printed JSON string or raw text if parsing fails.
+    """
     try:
         return json.dumps(r.json(), indent=2)
     except Exception:
@@ -31,6 +54,21 @@ def pretty(r):
 
 
 def run_tests():
+    """
+    Run the integration test suite.
+
+    Steps:
+    1. Health check.
+    2. Create a test job.
+    3. Create a test resume.
+    4. Create an interview linking job and resume.
+    5. Create a match rating.
+    6. Fetch full interview details.
+    7. Clean up (delete job and resume).
+
+    Returns:
+        int: 0 on success, non-zero error code on failure.
+    """
     print("Starting API integration tests against", BASE)
     if not check_health():
         print("Backend health check failed. Make sure the server is running at", BASE)

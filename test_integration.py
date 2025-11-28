@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Integration test script to verify data consistency across the full stack
+Integration test script to verify data consistency across the full stack.
+
+This script spins up the FastAPI server in a background thread and runs a series
+of requests against the API endpoints to ensure they are reachable and return
+consistent data structures.
 """
 
 import json
@@ -16,7 +20,12 @@ def run_server():
     uvicorn.run(app, host='127.0.0.1', port=8000, log_level='error')
 
 def test_api_consistency():
-    """Test API endpoints for data consistency"""
+    """
+    Test API endpoints for data consistency.
+
+    Performs GET requests to key endpoints (/health, /api/analytics/stats, /api/jobs,
+    /api/resumes, /api/interviews) and verifies their status codes and response structures.
+    """
     base_url = "http://127.0.0.1:8000"
     
     # Wait for server to start

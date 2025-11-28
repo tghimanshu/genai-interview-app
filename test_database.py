@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """
-Test script for SQLite database functionality
-Creates sample data and validates all database operations
+Test script for SQLite database functionality.
+
+This script validates all database operations by:
+1. Creating a test database.
+2. Creating sample Job Descriptions, Resumes, and Interviews.
+3. Testing CRUD operations for all entities.
+4. Testing complex logic like Match Ratings, Recordings, and Scoring Analysis.
+5. Verifying system event logging.
+6. Validating database integrity.
+7. Creating sample data for the production database if tests pass.
 """
 
 import json
@@ -20,7 +28,12 @@ from database_operations import (
 
 
 def create_sample_job_description() -> JobDescription:
-    """Create sample job description"""
+    """
+    Create a sample JobDescription object for testing.
+
+    Returns:
+        JobDescription: A populated JobDescription object.
+    """
     skills = json.dumps(
         [
             "Python",
@@ -50,7 +63,12 @@ def create_sample_job_description() -> JobDescription:
 
 
 def create_sample_resume() -> Resume:
-    """Create sample resume"""
+    """
+    Create a sample Resume object for testing.
+
+    Returns:
+        Resume: A populated Resume object.
+    """
     skills = json.dumps(
         [
             "Python",
@@ -81,7 +99,16 @@ def create_sample_resume() -> Resume:
 
 
 def create_sample_interview(job_id: int, resume_id: int) -> Interview:
-    """Create sample interview"""
+    """
+    Create a sample Interview object for testing.
+
+    Args:
+        job_id (int): The ID of the job description.
+        resume_id (int): The ID of the resume.
+
+    Returns:
+        Interview: A populated Interview object.
+    """
     return Interview(
         session_id="session_20250929_065236",
         job_description_id=job_id,
@@ -99,7 +126,14 @@ def create_sample_interview(job_id: int, resume_id: int) -> Interview:
 
 
 def run_comprehensive_tests():
-    """Run comprehensive database tests"""
+    """
+    Run comprehensive database tests.
+
+    Executes a sequence of operations to verify all aspects of the database layer.
+
+    Returns:
+        bool: True if all tests pass, False otherwise.
+    """
     print("=" * 80)
     print("SQLite Database Comprehensive Testing")
     print("=" * 80)
@@ -321,7 +355,14 @@ def run_comprehensive_tests():
 
 
 def create_production_sample_data():
-    """Create sample data for production database"""
+    """
+    Create sample data for the production database.
+
+    Seeds the database with initial Job Descriptions and Resumes for demo purposes.
+
+    Returns:
+        tuple: A tuple containing lists of created job IDs and resume IDs.
+    """
     print("\n" + "=" * 80)
     print("Creating Sample Data for Production Database")
     print("=" * 80)
@@ -400,7 +441,11 @@ def create_production_sample_data():
 
 
 def main():
-    """Main test function"""
+    """
+    Main test function.
+
+    Orchestrates the test sequence and optional production seeding.
+    """
     print("Starting SQLite Database Tests...")
 
     # Run comprehensive tests

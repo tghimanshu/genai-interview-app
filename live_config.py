@@ -1,3 +1,11 @@
+"""
+Configuration module for the Live Interview application.
+
+This module handles the setup of the Gemini Live API client, manages configuration constants
+(like sample rates and model names), and provides functions to build dynamic system instructions
+and connection configurations based on the interview context.
+"""
+
 import os
 import pathlib
 from copy import deepcopy
@@ -18,6 +26,15 @@ MODEL = "models/gemini-2.5-flash-live-preview"
 
 
 def _read_text(filename: str) -> str:
+    """
+    Reads the content of a text file.
+
+    Args:
+        filename (str): The name of the file to read.
+
+    Returns:
+        str: The content of the file, or an empty string if the file does not exist.
+    """
     path = BASE_DIR / filename
     if not path.exists():
         return ""
@@ -104,6 +121,17 @@ def _build_system_instruction(
     job_description_text: Optional[str] = None,
     session_context: Optional[dict] = None,
 ) -> str:
+    """
+    Constructs the system instruction prompt for the AI model.
+
+    Args:
+        resume_text (Optional[str]): Text content of the candidate's resume.
+        job_description_text (Optional[str]): Text content of the job description.
+        session_context (Optional[dict]): Contextual information (interview type, session ID, etc.).
+
+    Returns:
+        str: The formatted system prompt.
+    """
     context = session_context or {}
     return SYSTEM_PROMPT_TEMPLATE.format(
         job_description=(job_description_text or DEFAULT_JOB_DESCRIPTION_TEXT).strip(),
@@ -147,7 +175,22 @@ def build_live_config(
     job_description_text: Optional[str] = None,
     session_context: Optional[dict] = None,
 ) -> types.LiveConnectConfig:
-    """Return a deep-copied LiveConnectConfig optionally seeded with a resume handle and context."""
+    """
+    Builds a dynamic LiveConnectConfig based on session parameters.
+
+    This function creates a configuration object for the Gemini Live session,
+    incorporating the specific resume, job description, and any existing session handle
+    for resumption.
+
+    Args:
+        session_handle (str | None): The handle to resume an existing session, if any.
+        resume_text (Optional[str]): The candidate's resume text.
+        job_description_text (Optional[str]): The job description text.
+        session_context (Optional[dict]): Additional session context.
+
+    Returns:
+        types.LiveConnectConfig: The configured connection object.
+    """
 
     if hasattr(CONFIG, "model_copy"):
         config = CONFIG.model_copy(deep=True)

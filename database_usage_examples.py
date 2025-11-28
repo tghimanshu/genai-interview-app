@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Example usage of the SQLite database for the Live Interview App
-Demonstrates how to integrate the database with your interview application
+Example usage of the SQLite database for the Live Interview App.
+
+This module demonstrates how to use the `InterviewDatabaseOps` class to perform
+various database operations, simulating a complete interview workflow from
+job creation to final scoring and reporting.
 """
 
 import json
@@ -14,7 +17,22 @@ from database_operations import (
 
 def example_complete_interview_workflow():
     """
-    Example showing complete interview workflow from job posting to final decision
+    Simulate a complete interview workflow.
+
+    Steps:
+    1. Create a job description.
+    2. Create a candidate resume.
+    3. Generate a match rating.
+    4. Schedule an interview.
+    5. Update interview status to 'in_progress'.
+    6. Add an interview recording/transcript.
+    7. Complete the interview.
+    8. Generate scoring analysis.
+    9. Create a final score and hiring decision.
+    10. Retrieve complete results.
+
+    Returns:
+        int: The ID of the created interview.
     """
     print("=== Complete Interview Workflow Example ===\n")
     
@@ -199,7 +217,7 @@ def example_complete_interview_workflow():
 
 def example_integration_with_existing_files():
     """
-    Example showing how to integrate with your existing interview files
+    Example showing how to integrate existing recording files with database records.
     """
     print("\n=== Integration with Existing Files ===\n")
     
@@ -259,7 +277,7 @@ def example_integration_with_existing_files():
 
 def example_database_queries():
     """
-    Example showing useful database queries for reporting and analytics
+    Example showing useful database queries for analytics and reporting.
     """
     print("\n=== Database Queries and Analytics ===\n")
     
@@ -294,7 +312,7 @@ def example_database_queries():
 
 def main():
     """
-    Main function demonstrating all examples
+    Main function demonstrating all examples.
     """
     print("SQLite Database Usage Examples for Live Interview App")
     print("=" * 60)

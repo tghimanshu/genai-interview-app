@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Updated score_candidate.py with database integration
-This version saves scoring results to the SQLite database
+Updated score_candidate.py with database integration.
+
+This version saves scoring results to the SQLite database. It parses the AI's
+response to extract numerical scores and structured feedback, then stores it
+using the `InterviewDatabaseOps` class.
 """
 
 from google import genai
@@ -25,7 +28,16 @@ client = genai.Client(
 
 def parse_scoring_response(response_text: str) -> Dict[str, Any]:
     """
-    Parse AI response and extract structured scoring data
+    Parse AI response and extract structured scoring data.
+
+    Uses regex patterns to find scores for various criteria within the unstructured
+    text response from the AI model.
+
+    Args:
+        response_text (str): The raw text response from the AI.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing extracted scores, reasoning, and lists.
     """
     scoring_data = {
         "technical_skills_score": None,
@@ -107,8 +119,17 @@ def parse_scoring_response(response_text: str) -> Dict[str, Any]:
 
 def get_or_create_interview_data(session_id: str) -> Optional[int]:
     """
-    Get existing interview data or create if needed
-    Returns interview_id if successful
+    Get existing interview data or create if needed.
+
+    If the session ID corresponds to an existing interview, returns its ID.
+    Otherwise, attempts to create a new job description and resume from local files,
+    then creates a new interview record.
+
+    Args:
+        session_id (str): The session ID.
+
+    Returns:
+        Optional[int]: The interview ID if successful, None otherwise.
     """
     db_ops = get_db_ops()
     
@@ -174,14 +195,14 @@ def get_or_create_interview_data(session_id: str) -> Optional[int]:
 def score_candidate_with_database(session_id: Optional[str] = None, 
                                 transcript_file: str = "final_transcription.txt") -> bool:
     """
-    Score candidate and save results to database
-    
+    Score candidate and save results to database.
+
     Args:
-        session_id: Interview session ID (optional, will be extracted from files)
-        transcript_file: Name of transcript file
-        
+        session_id (Optional[str]): Interview session ID. If None, extracted from filename.
+        transcript_file (str): Name of transcript file.
+
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if successful, False otherwise.
     """
     
     # Extract session_id from transcript filename if not provided

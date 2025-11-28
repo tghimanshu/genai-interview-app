@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Database operations module for Live Interview App
-Provides CRUD operations and business logic for all database entities
+Database operations module for Live Interview App.
+
+Provides CRUD operations and business logic for all database entities, including
+Job Descriptions, Resumes, Interviews, Match Ratings, Recordings, and Scores.
 """
 
 import json
@@ -17,7 +19,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class JobDescription:
-    """Data class for job descriptions"""
+    """
+    Data class for job descriptions.
+
+    Attributes:
+        title (str): The job title.
+        company (str): The company name.
+        description_text (str): The full text of the job description.
+        description_pdf_path (Optional[str]): Path to the PDF file (if any).
+        description_image_path (Optional[str]): Path to the image file (if any).
+        requirements (Optional[str]): Specific job requirements.
+        skills_required (Optional[str]): JSON string of required skills.
+        experience_level (Optional[str]): Required experience level (e.g., Senior, Junior).
+        location (Optional[str]): Job location.
+        salary_range (Optional[str]): Salary range.
+        is_active (bool): Whether the job is active. Defaults to True.
+        id (Optional[int]): The database ID.
+        created_at (Optional[str]): Creation timestamp.
+        updated_at (Optional[str]): Last update timestamp.
+    """
 
     title: str
     company: str
@@ -37,7 +57,27 @@ class JobDescription:
 
 @dataclass
 class Resume:
-    """Data class for resumes"""
+    """
+    Data class for resumes.
+
+    Attributes:
+        candidate_name (str): The candidate's name.
+        resume_text (str): The full text content of the resume.
+        email (Optional[str]): Candidate's email.
+        phone (Optional[str]): Candidate's phone number.
+        resume_pdf_path (Optional[str]): Path to the PDF file (if any).
+        resume_image_path (Optional[str]): Path to the image file (if any).
+        skills (Optional[str]): JSON string of extracted skills.
+        experience_years (Optional[int]): Years of experience.
+        education (Optional[str]): Education details.
+        certifications (Optional[str]): Certifications details.
+        linkedin_url (Optional[str]): LinkedIn profile URL.
+        portfolio_url (Optional[str]): Portfolio URL.
+        is_active (bool): Whether the resume is active. Defaults to True.
+        id (Optional[int]): The database ID.
+        created_at (Optional[str]): Creation timestamp.
+        updated_at (Optional[str]): Last update timestamp.
+    """
 
     candidate_name: str
     resume_text: str
@@ -59,7 +99,27 @@ class Resume:
 
 @dataclass
 class Interview:
-    """Data class for interviews"""
+    """
+    Data class for interviews.
+
+    Attributes:
+        session_id (str): Unique session identifier (UUID).
+        job_description_id (int): ID of the related job description.
+        resume_id (int): ID of the related resume.
+        interview_link (Optional[str]): Link to join the interview.
+        status (str): Current status (e.g., 'scheduled', 'completed'). Defaults to 'scheduled'.
+        scheduled_at (Optional[str]): Scheduled start time.
+        started_at (Optional[str]): Actual start time.
+        ended_at (Optional[str]): Actual end time.
+        duration_minutes (Optional[int]): Duration in minutes.
+        interviewer_notes (Optional[str]): Notes from the interviewer.
+        candidate_feedback (Optional[str]): Feedback from the candidate.
+        technical_assessment (Optional[str]): Technical assessment details.
+        behavioral_assessment (Optional[str]): Behavioral assessment details.
+        id (Optional[int]): The database ID.
+        created_at (Optional[str]): Creation timestamp.
+        updated_at (Optional[str]): Last update timestamp.
+    """
 
     session_id: str
     job_description_id: int
@@ -80,14 +140,20 @@ class Interview:
 
 
 class InterviewDatabaseOps:
-    """Database operations class for interview application"""
+    """
+    Database operations class for interview application.
+
+    This class handles all interactions with the SQLite database, providing methods
+    to create, read, update, and delete (softly) records for job descriptions,
+    resumes, interviews, match ratings, recordings, and scores.
+    """
 
     def __init__(self, db_path: str = "db/interview_database.db"):
         """
-        Initialize database operations
+        Initialize database operations.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path (str): Path to the SQLite database file. Defaults to "db/interview_database.db".
         """
         self.db_manager = DatabaseManager(db_path)
 
@@ -95,13 +161,13 @@ class InterviewDatabaseOps:
 
     def create_job_description(self, job_desc: JobDescription) -> Optional[int]:
         """
-        Create a new job description
+        Create a new job description.
 
         Args:
-            job_desc: JobDescription object
+            job_desc (JobDescription): The job description object to insert.
 
         Returns:
-            int: ID of created job description, None if failed
+            Optional[int]: The ID of the created job description, or None if the operation failed.
         """
         try:
             query = """
@@ -137,7 +203,15 @@ class InterviewDatabaseOps:
             return None
 
     def get_job_description(self, job_id: int) -> Optional[Dict[str, Any]]:
-        """Get job description by ID"""
+        """
+        Get a job description by its ID.
+
+        Args:
+            job_id (int): The ID of the job description.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary representing the job description, or None if not found.
+        """
         try:
             query = "SELECT * FROM job_descriptions WHERE id = ?"
             rows = self.db_manager.execute_query(query, (job_id,))
@@ -149,7 +223,15 @@ class InterviewDatabaseOps:
             return None
 
     def list_job_descriptions(self, active_only: bool = True) -> List[Dict[str, Any]]:
-        """Get all job descriptions"""
+        """
+        List all job descriptions.
+
+        Args:
+            active_only (bool): If True, only return active job descriptions. Defaults to True.
+
+        Returns:
+            List[Dict[str, Any]]: A list of job description dictionaries.
+        """
         try:
             if active_only:
                 query = "SELECT * FROM job_descriptions WHERE is_active = 1 ORDER BY created_at DESC"
@@ -163,7 +245,16 @@ class InterviewDatabaseOps:
             return []
 
     def update_job_description(self, job_id: int, updates: Dict[str, Any]) -> bool:
-        """Update job description"""
+        """
+        Update a job description.
+
+        Args:
+            job_id (int): The ID of the job description to update.
+            updates (Dict[str, Any]): A dictionary of fields to update.
+
+        Returns:
+            bool: True if the update was successful, False otherwise.
+        """
         try:
             # Build dynamic update query
             set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])
@@ -183,7 +274,15 @@ class InterviewDatabaseOps:
     # ==================== RESUMES ====================
 
     def create_resume(self, resume: Resume) -> Optional[int]:
-        """Create a new resume"""
+        """
+        Create a new resume.
+
+        Args:
+            resume (Resume): The resume object to insert.
+
+        Returns:
+            Optional[int]: The ID of the created resume, or None if the operation failed.
+        """
         try:
             query = """
             INSERT INTO resumes 
@@ -220,7 +319,15 @@ class InterviewDatabaseOps:
             return None
 
     def get_resume(self, resume_id: int) -> Optional[Dict[str, Any]]:
-        """Get resume by ID"""
+        """
+        Get a resume by its ID.
+
+        Args:
+            resume_id (int): The ID of the resume.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary representing the resume, or None if not found.
+        """
         try:
             query = "SELECT * FROM resumes WHERE id = ?"
             rows = self.db_manager.execute_query(query, (resume_id,))
@@ -232,7 +339,15 @@ class InterviewDatabaseOps:
             return None
 
     def find_resume_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        """Find resume by candidate email"""
+        """
+        Find a resume by the candidate's email address.
+
+        Args:
+            email (str): The candidate's email.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary representing the resume, or None if not found.
+        """
         try:
             query = "SELECT * FROM resumes WHERE email = ? AND is_active = 1"
             rows = self.db_manager.execute_query(query, (email,))
@@ -244,7 +359,15 @@ class InterviewDatabaseOps:
             return None
 
     def list_resumes(self, active_only: bool = True) -> List[Dict[str, Any]]:
-        """Get all resumes"""
+        """
+        List all resumes.
+
+        Args:
+            active_only (bool): If True, only return active resumes. Defaults to True.
+
+        Returns:
+            List[Dict[str, Any]]: A list of resume dictionaries.
+        """
         try:
             if active_only:
                 query = (
@@ -262,7 +385,15 @@ class InterviewDatabaseOps:
     # ==================== INTERVIEWS ====================
 
     def create_interview(self, interview: Interview) -> Optional[int]:
-        """Create a new interview"""
+        """
+        Create a new interview.
+
+        Args:
+            interview (Interview): The interview object to insert.
+
+        Returns:
+            Optional[int]: The ID of the created interview, or None if the operation failed.
+        """
         try:
             # Generate session_id if not provided
             if not interview.session_id:
@@ -308,7 +439,15 @@ class InterviewDatabaseOps:
             return None
 
     def get_interview(self, interview_id: int) -> Optional[Dict[str, Any]]:
-        """Get interview by ID"""
+        """
+        Get an interview by its ID.
+
+        Args:
+            interview_id (int): The ID of the interview.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary representing the interview, or None if not found.
+        """
         try:
             query = "SELECT * FROM interviews WHERE id = ?"
             rows = self.db_manager.execute_query(query, (interview_id,))
@@ -320,7 +459,15 @@ class InterviewDatabaseOps:
             return None
 
     def get_interview_by_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get interview by session ID"""
+        """
+        Get an interview by its session ID.
+
+        Args:
+            session_id (str): The unique session ID of the interview.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary representing the interview, or None if not found.
+        """
         try:
             query = "SELECT * FROM interviews WHERE session_id = ?"
             rows = self.db_manager.execute_query(query, (session_id,))
@@ -337,7 +484,20 @@ class InterviewDatabaseOps:
         status: str,
         additional_updates: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Update interview status and optional additional fields"""
+        """
+        Update the status of an interview and optionally update other fields.
+
+        Handles automatic updating of timestamps (started_at, ended_at) and
+        duration calculation based on the status change.
+
+        Args:
+            interview_id (int): The ID of the interview.
+            status (str): The new status (e.g., 'in_progress', 'completed').
+            additional_updates (Optional[Dict[str, Any]]): Other fields to update.
+
+        Returns:
+            bool: True if the update was successful, False otherwise.
+        """
         try:
             updates = {"status": status, "updated_at": datetime.now().isoformat()}
 
@@ -366,7 +526,16 @@ class InterviewDatabaseOps:
             return False
 
     def update_interview(self, interview_id: int, updates: Dict[str, Any]) -> bool:
-        """Update interview with arbitrary fields"""
+        """
+        Update an interview with arbitrary fields.
+
+        Args:
+            interview_id (int): The ID of the interview.
+            updates (Dict[str, Any]): A dictionary of fields to update.
+
+        Returns:
+            bool: True if the update was successful, False otherwise.
+        """
         try:
             set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])
             query = f"""
@@ -390,7 +559,16 @@ class InterviewDatabaseOps:
     def list_interviews(
         self, status_filter: Optional[str] = None, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """List all interviews with optional filters"""
+        """
+        List all interviews, optionally filtered by status and limited by count.
+
+        Args:
+            status_filter (Optional[str]): The status to filter by.
+            limit (Optional[int]): The maximum number of interviews to return.
+
+        Returns:
+            List[Dict[str, Any]]: A list of interview dictionaries with joined job and candidate info.
+        """
         try:
             query = """
             SELECT i.*, 
@@ -422,7 +600,15 @@ class InterviewDatabaseOps:
             return []
 
     def get_interview_summary(self, interview_id: int) -> Optional[Dict[str, Any]]:
-        """Get comprehensive interview summary with related data"""
+        """
+        Get a comprehensive summary of an interview, including related job, resume, rating, and scores.
+
+        Args:
+            interview_id (int): The ID of the interview.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary containing the interview summary, or None if not found.
+        """
         try:
             query = """
             SELECT i.*, 
@@ -457,7 +643,22 @@ class InterviewDatabaseOps:
         detailed_analysis: Optional[Dict[str, Any]] = None,
         model_version: Optional[str] = None,
     ) -> Optional[int]:
-        """Create or update match rating between job and resume"""
+        """
+        Create or update a match rating between a job description and a resume.
+
+        If a rating already exists for the pair, it is updated.
+
+        Args:
+            job_description_id (int): The job description ID.
+            resume_id (int): The resume ID.
+            overall_score (float): The calculated match score.
+            reasoning (str): The reasoning behind the score.
+            detailed_analysis (Optional[Dict[str, Any]]): Structured analysis details.
+            model_version (Optional[str]): version of the AI model used.
+
+        Returns:
+            Optional[int]: The ID of the match rating, or None if operation failed.
+        """
         try:
             # Check if rating already exists
             existing = self.get_match_rating(job_description_id, resume_id)
@@ -509,7 +710,16 @@ class InterviewDatabaseOps:
     def get_match_rating(
         self, job_description_id: int, resume_id: int
     ) -> Optional[Dict[str, Any]]:
-        """Get match rating for job and resume pair"""
+        """
+        Get the match rating for a specific job and resume pair.
+
+        Args:
+            job_description_id (int): The job description ID.
+            resume_id (int): The resume ID.
+
+        Returns:
+            Optional[Dict[str, Any]]: The match rating dictionary, or None if not found.
+        """
         try:
             query = """
             SELECT * FROM match_ratings 
@@ -524,7 +734,16 @@ class InterviewDatabaseOps:
             return None
 
     def update_match_rating(self, rating_id: int, updates: Dict[str, Any]) -> bool:
-        """Update match rating"""
+        """
+        Update an existing match rating.
+
+        Args:
+            rating_id (int): The ID of the match rating.
+            updates (Dict[str, Any]): A dictionary of fields to update.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         try:
             set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])
             query = f"""
@@ -550,7 +769,19 @@ class InterviewDatabaseOps:
         transcript_text: Optional[str] = None,
         **kwargs,
     ) -> Optional[int]:
-        """Add interview recording/transcript"""
+        """
+        Add a record for an interview recording or transcript.
+
+        Args:
+            interview_id (int): The interview ID.
+            recording_type (str): Type of recording (e.g., 'audio', 'video', 'transcript').
+            file_path (Optional[str]): Path to the file.
+            transcript_text (Optional[str]): Content of the transcript (if applicable).
+            **kwargs: Additional fields like duration_seconds, file_size_mb, mime_type.
+
+        Returns:
+            Optional[int]: The ID of the recording record, or None if failed.
+        """
         try:
             query = """
             INSERT INTO interview_recordings 
@@ -583,7 +814,15 @@ class InterviewDatabaseOps:
             return None
 
     def get_interview_recordings(self, interview_id: int) -> List[Dict[str, Any]]:
-        """Get all recordings for an interview"""
+        """
+        Get all recordings associated with an interview.
+
+        Args:
+            interview_id (int): The interview ID.
+
+        Returns:
+            List[Dict[str, Any]]: A list of recording records.
+        """
         try:
             query = "SELECT * FROM interview_recordings WHERE interview_id = ? ORDER BY created_at"
             rows = self.db_manager.execute_query(query, (interview_id,))
@@ -600,7 +839,17 @@ class InterviewDatabaseOps:
         scores: Dict[str, Any],
         model_version: Optional[str] = None,
     ) -> Optional[int]:
-        """Create detailed scoring analysis"""
+        """
+        Create a detailed scoring analysis record.
+
+        Args:
+            interview_id (int): The interview ID.
+            scores (Dict[str, Any]): Dictionary containing scores and reasoning for various criteria.
+            model_version (Optional[str]): AI model version used for scoring.
+
+        Returns:
+            Optional[int]: The ID of the scoring analysis record, or None if failed.
+        """
         try:
             query = """
             INSERT INTO scoring_analysis 
@@ -649,7 +898,18 @@ class InterviewDatabaseOps:
     def create_final_score(
         self, interview_id: int, final_score: float, decision: str, **kwargs
     ) -> Optional[int]:
-        """Create final score and decision"""
+        """
+        Create a final score and decision record for an interview.
+
+        Args:
+            interview_id (int): The interview ID.
+            final_score (float): The final calculated score.
+            decision (str): The hiring decision (e.g., 'Hire', 'No Hire').
+            **kwargs: Additional fields like weighted scores and methodology.
+
+        Returns:
+            Optional[int]: The ID of the final score record, or None if failed.
+        """
         try:
             query = """
             INSERT INTO final_scores 
@@ -693,7 +953,18 @@ class InterviewDatabaseOps:
             return None
 
     def get_interview_full_results(self, interview_id: int) -> Dict[str, Any]:
-        """Get complete interview results including all related data"""
+        """
+        Get the complete results bundle for an interview.
+
+        Retrieves interview details, job info, resume info, match ratings,
+        recordings, scoring analysis, final score, and feedback.
+
+        Args:
+            interview_id (int): The interview ID.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing all interview-related data.
+        """
         try:
             results = {}
 
@@ -740,7 +1011,12 @@ class InterviewDatabaseOps:
             return {}
 
     def get_all_interview_results(self) -> Dict[str, Any]:
-        """Get complete interview results including all related data"""
+        """
+        Get all scoring analysis and final scores for all interviews.
+
+        Returns:
+            Dict[str, Any]: A dictionary with lists of 'scoring_analysis' and 'final_score'.
+        """
         try:
             results = {}
 
@@ -770,7 +1046,19 @@ class InterviewDatabaseOps:
         event_data: Dict[str, Any] = None,
         user_id: str = None,
     ) -> Optional[int]:
-        """Log system event"""
+        """
+        Log a system event to the database.
+
+        Args:
+            event_type (str): The type of event (e.g., 'interview_created').
+            entity_type (Optional[str]): The related entity type (e.g., 'interview').
+            entity_id (Optional[int]): The related entity ID.
+            event_data (Optional[Dict[str, Any]]): Additional event data as a dictionary.
+            user_id (Optional[str]): ID of the user performing the action.
+
+        Returns:
+            Optional[int]: The ID of the created event log, or None if failed.
+        """
         try:
             query = """
             INSERT INTO system_events 
@@ -798,7 +1086,15 @@ class InterviewDatabaseOps:
     # ==================== UTILITY METHODS ====================
 
     def get_recent_interviews(self, days: int = 7) -> List[Dict[str, Any]]:
-        """Get recent interviews"""
+        """
+        Get a list of interviews that started within the last N days.
+
+        Args:
+            days (int): Number of days to look back. Defaults to 7.
+
+        Returns:
+            List[Dict[str, Any]]: List of recent interviews.
+        """
         try:
             query = """
             SELECT * FROM interview_summary 
@@ -815,7 +1111,15 @@ class InterviewDatabaseOps:
             return []
 
     def search_candidates(self, search_term: str) -> List[Dict[str, Any]]:
-        """Search candidates by name or email"""
+        """
+        Search for candidates by name or email.
+
+        Args:
+            search_term (str): The search string.
+
+        Returns:
+            List[Dict[str, Any]]: List of matching candidate resumes.
+        """
         try:
             query = """
             SELECT * FROM resumes 
@@ -833,5 +1137,13 @@ class InterviewDatabaseOps:
 
 # Convenience functions for easy import
 def get_db_ops(db_path: str = "db/interview_database.db") -> InterviewDatabaseOps:
-    """Get database operations instance"""
+    """
+    Convenience function to get a configured InterviewDatabaseOps instance.
+
+    Args:
+        db_path (str): Path to the database file.
+
+    Returns:
+        InterviewDatabaseOps: The database operations instance.
+    """
     return InterviewDatabaseOps(db_path)

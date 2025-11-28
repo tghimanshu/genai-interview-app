@@ -1,3 +1,11 @@
+"""
+Email Utility.
+
+This module provides functionality to send emails using SMTP (specifically configured for Gmail).
+It handles constructing the email message with subject, body, and recipients, and sending it
+securely via SSL.
+"""
+
 import smtplib
 import os
 from email.mime.text import MIMEText
@@ -14,12 +22,16 @@ recipients = ["himanshugohil234@gmail.com"]
 def send_email(subject, body, recipients):
     """
     Send an email using SMTP.
+
     Args:
-    subject (str): Subject of the email.
-    body (str): Body of the email.
-    recipients (list): List of recipient email addresses.
+        subject (str): Subject of the email.
+        body (str): Body of the email.
+        recipients (list): List of recipient email addresses.
+
     Returns:
-    dict: A dictionary with the status code and message.
+        dict: A dictionary with the status code and message.
+              {"statusCode": 200, "body": "Email sent successfully!"} on success,
+              {"statusCode": 500, "body": "Error sending email: ..."} on failure.
     """
     sender = os.getenv("SMTP_USERNAME")
     password = os.getenv("SMTP_PASSWORD")

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Simple database viewer for the Live Interview App
-Provides a command-line interface to explore database contents
+Simple database viewer for the Live Interview App.
+
+Provides a command-line interface to explore database contents, view statistics,
+and inspect details of jobs, resumes, and interviews.
 """
 
 import json
@@ -13,7 +15,12 @@ from database_operations import get_db_ops
 
 
 def print_separator(title: str = ""):
-    """Print a formatted separator"""
+    """
+    Print a formatted separator line with an optional title.
+
+    Args:
+        title (str): Title to display in the separator.
+    """
     if title:
         print(f"\n{'='*20} {title} {'='*20}")
     else:
@@ -21,7 +28,14 @@ def print_separator(title: str = ""):
 
 
 def print_table_data(data: List[Dict], title: str, max_rows: int = 10):
-    """Print table data in a formatted way"""
+    """
+    Print table data in a formatted way.
+
+    Args:
+        data (List[Dict]): List of data dictionaries.
+        title (str): Title of the table.
+        max_rows (int): Maximum number of rows to display. Defaults to 10.
+    """
     if not data:
         print(f"No {title.lower()} found.")
         return
@@ -62,7 +76,7 @@ def print_table_data(data: List[Dict], title: str, max_rows: int = 10):
 
 
 def view_database_overview():
-    """Show database overview and statistics"""
+    """Show database overview and statistics."""
     print_separator("DATABASE OVERVIEW")
 
     db_ops = get_db_ops()
@@ -84,7 +98,7 @@ def view_database_overview():
 
 
 def view_job_descriptions():
-    """View all job descriptions"""
+    """View all job descriptions."""
     print_separator("JOB DESCRIPTIONS")
 
     db_ops = get_db_ops()
@@ -93,7 +107,7 @@ def view_job_descriptions():
 
 
 def view_resumes():
-    """View all resumes"""
+    """View all resumes."""
     print_separator("CANDIDATE RESUMES")
 
     db_ops = get_db_ops()
@@ -102,7 +116,7 @@ def view_resumes():
 
 
 def view_interviews():
-    """View all interviews"""
+    """View all interviews."""
     print_separator("INTERVIEWS")
 
     db_ops = get_db_ops()
@@ -135,7 +149,12 @@ def view_interviews():
 
 
 def view_detailed_interview(interview_id: int):
-    """View detailed interview results"""
+    """
+    View detailed interview results.
+
+    Args:
+        interview_id (int): The ID of the interview to view.
+    """
     print_separator(f"INTERVIEW DETAILS - ID: {interview_id}")
 
     db_ops = get_db_ops()
@@ -231,7 +250,7 @@ def view_detailed_interview(interview_id: int):
 
 
 def search_interviews():
-    """Search interviews by candidate name"""
+    """Search interviews by candidate name."""
     candidate_name = input("Enter candidate name to search: ").strip()
     if not candidate_name:
         return
@@ -275,7 +294,7 @@ def search_interviews():
 
 
 def main_menu():
-    """Display main menu and handle user choices"""
+    """Display main menu and handle user choices."""
     while True:
         print_separator("LIVE INTERVIEW DATABASE VIEWER")
         print("1. Database Overview")

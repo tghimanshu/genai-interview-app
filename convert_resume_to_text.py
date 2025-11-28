@@ -1,3 +1,11 @@
+"""
+Resume Conversion Utility.
+
+This module provides functionality to convert resumes (PDF, image, etc.) into structured
+JSON data using the Gemini API. It extracts key details such as candidate name,
+contact info, skills, experience, and education.
+"""
+
 import os
 import pathlib
 import json
@@ -8,6 +16,20 @@ load_dotenv()
 
 
 def convert_resume_to_txt(input_file):
+    """
+    Convert a resume file to structured JSON data.
+
+    Uploads the file to Gemini and prompts it to extract specific fields.
+
+    Args:
+        input_file (str): The path to the resume file.
+
+    Returns:
+        dict: A dictionary containing extracted resume details, including:
+              candidate_name, resume_text, email, phone, skills, experience_years,
+              education, certifications, linkedin_url, and portfolio_url.
+              Returns None if the conversion fails.
+    """
     try:
         client = Client(api_key=os.environ.get("GEMINI_API_KEY", "<Enter your API key here>"))
         prompt_file = client.files.upload(file=input_file)

@@ -1,7 +1,11 @@
 """
 In-process API integration tests using FastAPI TestClient.
-This will override the server's InterviewDatabaseOps factory to use a test DB
-`db/test_interview_database.db`, create the schema, then exercise endpoints.
+
+This script executes integration tests by overriding the database backend to use a
+fresh test SQLite database. It creates the schema, then exercises the main API endpoints
+(create job, create resume, schedule interview, match rating, soft delete) using
+FastAPI's TestClient to ensure the application logic works correctly without
+needing a running server process.
 """
 
 from fastapi.testclient import TestClient
@@ -33,6 +37,15 @@ server.InterviewDatabaseOps = lambda *a, **k: database_operations.InterviewDatab
 client = TestClient(server.app)
 
 def pretty(resp):
+    """
+    Format response JSON for pretty printing.
+
+    Args:
+        resp (Response): The FastAPI TestClient response object.
+
+    Returns:
+        str: Pretty-printed JSON string or raw text if parsing fails.
+    """
     try:
         return json.dumps(resp.json(), indent=2)
     except Exception:
@@ -40,6 +53,18 @@ def pretty(resp):
 
 
 def run():
+    """
+    Execute the in-process API test suite.
+
+    Tests covered:
+    - Health check
+    - Job creation (POST)
+    - Resume creation (POST)
+    - Interview scheduling (POST)
+    - Match rating creation (POST)
+    - Interview retrieval (GET)
+    - Soft deletion of Jobs and Resumes (DELETE)
+    """
     print("Running in-process API tests against TestClient")
 
     r = client.get("/health")

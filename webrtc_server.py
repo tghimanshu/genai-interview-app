@@ -1,6 +1,10 @@
 """
-WebRTC Server Implementation for Live Interview System
-Provides better real-time audio/video performance compared to WebSockets
+WebRTC Server Implementation for Live Interview System.
+
+This module provides WebRTC capabilities for better real-time audio/video performance
+compared to standard WebSockets. It handles the signaling process (offer/answer exchange,
+ICE candidates) and media track processing (audio for transcription/response, video for
+face detection).
 """
 
 import asyncio
@@ -31,7 +35,12 @@ RTC_CONFIGURATION = RTCConfiguration([
 ])
 
 class AudioTrack(MediaStreamTrack):
-    """Custom audio track for processing interview audio"""
+    """
+    Custom audio track for processing interview audio.
+
+    This track is intended to receive audio frames from the AI model (or silence/placeholder
+    in the current implementation) and send them to the WebRTC peer.
+    """
     
     kind = "audio"
     
@@ -41,7 +50,15 @@ class AudioTrack(MediaStreamTrack):
         self._timestamp = 0
         
     async def recv(self):
-        """Receive audio frames from the AI model"""
+        """
+        Receive audio frames.
+
+        Currently generates silence frames. In a full implementation, this would yield
+        audio buffers received from the Gemini Live API.
+
+        Returns:
+            av.AudioFrame: An audio frame to be sent to the client.
+        """
         try:
             # This would receive audio from the Gemini Live API
             # For now, return silence - will be implemented based on your existing audio logic
@@ -65,7 +82,12 @@ class AudioTrack(MediaStreamTrack):
             raise MediaStreamError
 
 class VideoTrack(MediaStreamTrack):
-    """Custom video track for face detection and monitoring"""
+    """
+    Custom video track.
+
+    This track sends video frames to the client. Currently sends a placeholder black frame,
+    but could be used to send visual feedback or the AI avatar in future versions.
+    """
     
     kind = "video"
     
@@ -74,7 +96,14 @@ class VideoTrack(MediaStreamTrack):
         self.interview_session = interview_session
         
     async def recv(self):
-        """Process video frames for face detection"""
+        """
+        Receive video frames.
+
+        Currently generates a black placeholder frame.
+
+        Returns:
+            av.VideoFrame: A video frame to be sent to the client.
+        """
         try:
             # This will be used for face detection and look-away monitoring
             # For now, return a black frame
@@ -97,7 +126,12 @@ class VideoTrack(MediaStreamTrack):
             raise MediaStreamError
 
 class WebRTCInterviewSession:
-    """WebRTC-based interview session handler"""
+    """
+    Handler for a single WebRTC interview session.
+
+    Manages peer connections, media tracks, and processing logic (e.g., face detection
+    on incoming video streams).
+    """
     
     def __init__(self, websocket: WebSocket, resume_handle: Optional[str] = None):
         self.websocket = websocket
@@ -125,7 +159,15 @@ class WebRTCInterviewSession:
         logger.info(f"Created WebRTC session: {self.session_id}")
     
     async def handle_offer(self, peer_id: str, offer_data: dict):
-        """Handle WebRTC offer from client"""
+        """
+        Handle a WebRTC offer from a client.
+
+        Creates a PeerConnection, sets up tracks, and returns an answer.
+
+        Args:
+            peer_id (str): Identifier for the peer.
+            offer_data (dict): The SDP offer data.
+        """
         try:
             pc = RTCPeerConnection(RTC_CONFIGURATION)
             self.peer_connections[peer_id] = pc
@@ -182,7 +224,13 @@ class WebRTCInterviewSession:
             })
     
     async def handle_ice_candidate(self, peer_id: str, candidate_data: dict):
-        """Handle ICE candidate from client"""
+        """
+        Handle an incoming ICE candidate.
+
+        Args:
+            peer_id (str): Identifier for the peer.
+            candidate_data (dict): The ICE candidate data.
+        """
         try:
             pc = self.peer_connections.get(peer_id)
             if not pc:
@@ -203,7 +251,15 @@ class WebRTCInterviewSession:
             logger.error(f"Error handling ICE candidate: {e}")
     
     async def process_audio_track(self, track):
-        """Process incoming audio from client"""
+        """
+        Process incoming audio stream from the client.
+
+        This method receives audio frames and (in the future) will forward them
+        to the Gemini Live API for processing.
+
+        Args:
+            track: The incoming MediaStreamTrack (audio).
+        """
         try:
             while True:
                 frame = await track.recv()
@@ -223,7 +279,15 @@ class WebRTCInterviewSession:
             logger.error(f"Error processing audio track: {e}")
     
     async def process_video_track(self, track):
-        """Process incoming video for face detection"""
+        """
+        Process incoming video stream from the client.
+
+        Extracts frames and performs face detection to monitor candidate attention.
+        Sends warnings via WebSocket if the candidate looks away.
+
+        Args:
+            track: The incoming MediaStreamTrack (video).
+        """
         try:
             while True:
                 frame = await track.recv()
@@ -268,7 +332,12 @@ class WebRTCInterviewSession:
             logger.error(f"Error processing video track: {e}")
     
     async def cleanup_peer(self, peer_id: str):
-        """Clean up peer connection"""
+        """
+        Close a specific peer connection.
+
+        Args:
+            peer_id (str): Identifier for the peer.
+        """
         if peer_id in self.peer_connections:
             pc = self.peer_connections[peer_id]
             await pc.close()
@@ -276,7 +345,7 @@ class WebRTCInterviewSession:
             logger.info(f"Cleaned up peer connection: {peer_id}")
     
     async def cleanup(self):
-        """Clean up all resources"""
+        """Clean up all resources associated with the session."""
         for peer_id in list(self.peer_connections.keys()):
             await self.cleanup_peer(peer_id)
         logger.info(f"Cleaned up WebRTC session: {self.session_id}")
@@ -285,7 +354,15 @@ class WebRTCInterviewSession:
 active_sessions: Dict[str, WebRTCInterviewSession] = {}
 
 async def handle_webrtc_message(websocket: WebSocket, message: dict):
-    """Handle WebRTC signaling messages"""
+    """
+    Dispatcher for WebRTC signaling messages received via WebSocket.
+
+    Routes messages to the appropriate session and handler method.
+
+    Args:
+        websocket (WebSocket): The control WebSocket connection.
+        message (dict): The parsed JSON message.
+    """
     try:
         message_type = message.get("type")
         session_id = message.get("session_id")
@@ -330,7 +407,12 @@ async def handle_webrtc_message(websocket: WebSocket, message: dict):
         })
 
 async def cleanup_session(session_id: str):
-    """Clean up session when WebSocket disconnects"""
+    """
+    Clean up session resources when WebSocket disconnects.
+
+    Args:
+        session_id (str): The session identifier.
+    """
     if session_id in active_sessions:
         session = active_sessions[session_id]
         await session.cleanup()

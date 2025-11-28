@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Database initialization and management module for Live Interview App
-Creates SQLite database with all necessary tables and relationships
+Database initialization and management module for Live Interview App.
+
+This module handles the creation, initialization, validation, and maintenance
+of the SQLite database. It reads the schema from `database_schema.sql` and
+sets up the necessary tables and relationships. It also provides utility
+functions for database backups and statistics.
 """
 
 import sqlite3
@@ -17,14 +21,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    """Manages SQLite database operations for the interview application"""
+    """
+    Manages SQLite database operations for the interview application.
+
+    This class handles the low-level database connection, creation from schema,
+    validation, and maintenance tasks like backup and stats collection.
+    """
     
     def __init__(self, db_path: str = "db/interview_database.db"):
         """
-        Initialize database manager
+        Initialize the database manager.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path (str): Path to the SQLite database file. Defaults to "db/interview_database.db".
         """
         if not os.path.exists(os.path.dirname(db_path)):
             os.makedirs(os.path.dirname(db_path))
@@ -33,7 +42,12 @@ class DatabaseManager:
         self.schema_path = self.base_dir / "database_schema.sql"
         
     def get_connection(self) -> sqlite3.Connection:
-        """Get database connection with foreign key enforcement enabled"""
+        """
+        Get a database connection with foreign key enforcement enabled.
+
+        Returns:
+            sqlite3.Connection: The database connection object with row factory set to sqlite3.Row.
+        """
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
@@ -41,13 +55,13 @@ class DatabaseManager:
     
     def create_database(self, force_recreate: bool = False) -> bool:
         """
-        Create the database and all tables from schema file
+        Create the database and all tables from the schema file.
         
         Args:
-            force_recreate: If True, drop existing database and recreate
+            force_recreate (bool): If True, drops the existing database and recreates it. Defaults to False.
             
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if database creation was successful, False otherwise.
         """
         try:
             # Remove existing database if force_recreate is True
@@ -93,10 +107,10 @@ class DatabaseManager:
     
     def validate_database(self) -> bool:
         """
-        Validate that all required tables exist and have correct structure
+        Validate that all required tables exist in the database.
         
         Returns:
-            bool: True if database is valid, False otherwise
+            bool: True if all required tables exist, False otherwise.
         """
         required_tables = [
             'job_descriptions', 'resumes', 'interviews', 'match_ratings',
@@ -125,10 +139,10 @@ class DatabaseManager:
     
     def get_database_stats(self) -> Dict[str, Any]:
         """
-        Get statistics about the database contents
+        Get statistics about the database contents.
         
         Returns:
-            dict: Statistics including table counts and recent activity
+            Dict[str, Any]: A dictionary containing table counts, recent activity, and file size.
         """
         stats = {}
         
@@ -165,13 +179,13 @@ class DatabaseManager:
     
     def backup_database(self, backup_path: Optional[str] = None) -> bool:
         """
-        Create a backup of the database
+        Create a backup of the database file.
         
         Args:
-            backup_path: Path for backup file (optional)
+            backup_path (Optional[str]): Custom path for the backup file. If None, generates a timestamped path.
             
         Returns:
-            bool: True if backup successful, False otherwise
+            bool: True if backup was successful, False otherwise.
         """
         if not backup_path:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -189,14 +203,14 @@ class DatabaseManager:
     
     def execute_query(self, query: str, params: tuple = None) -> List[sqlite3.Row]:
         """
-        Execute a SELECT query and return results
+        Execute a SELECT query and return the results.
         
         Args:
-            query: SQL query string
-            params: Query parameters (optional)
+            query (str): The SQL SELECT query.
+            params (tuple): Optional parameters for the query.
             
         Returns:
-            List of rows as sqlite3.Row objects
+            List[sqlite3.Row]: A list of rows returned by the query.
         """
         try:
             with self.get_connection() as conn:
@@ -209,14 +223,14 @@ class DatabaseManager:
     
     def execute_update(self, query: str, params: tuple = None) -> bool:
         """
-        Execute an INSERT, UPDATE, or DELETE query
+        Execute an INSERT, UPDATE, or DELETE query.
         
         Args:
-            query: SQL query string
-            params: Query parameters (optional)
+            query (str): The SQL query to execute.
+            params (tuple): Optional parameters for the query.
             
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if the operation was successful, False otherwise.
         """
         try:
             with self.get_connection() as conn:
@@ -230,7 +244,18 @@ class DatabaseManager:
 
 
 def main():
-    """Main function to initialize the database"""
+    """
+    Main function to run the database initialization process.
+
+    Steps:
+    1. Create database tables from schema.
+    2. Validate database structure.
+    3. Display database statistics.
+    4. Create an initial backup.
+
+    Returns:
+        bool: True if initialization was successful, False otherwise.
+    """
     print("=" * 60)
     print("Live Interview App - Database Initialization")
     print("=" * 60)

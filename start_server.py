@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Start the FastAPI server"""
+"""
+Start the FastAPI server.
+
+This script initializes and runs the Uvicorn server to serve the FastAPI application
+defined in `server.py`. It is the entry point for running the backend service.
+"""
 import uvicorn
 
 if __name__ == "__main__":
