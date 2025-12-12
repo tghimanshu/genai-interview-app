@@ -14,7 +14,8 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent
 SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000
 
-MODEL = "models/gemini-2.5-flash-live-preview"
+# MODEL = "models/gemini-2.5-flash-live-preview"
+MODEL = "models/gemini-2.5-flash-native-audio-preview-09-2025"
 
 
 def _read_text(filename: str) -> str:

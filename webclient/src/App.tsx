@@ -64,7 +64,6 @@ type Interview = {
   duration_minutes?: number;
   created_at?: string;
   interviewer_notes?: string;
-
 };
 
 type InterviewSummary = {
@@ -150,6 +149,22 @@ const readStoredText = (key: string): string => {
     return "";
   }
 };
+
+/*
+Usage example:
+
+import React from 'react';
+import ScoreTable from './ScoreTable';
+import data from './session_20251119_090821_score.json';
+
+export default function App() {
+    return (
+        <div className="p-6">
+            <ScoreTable data={data} />
+        </div>
+    );
+}
+*/
 
 function arrayBufferToBase64(
   buffer: ArrayBufferLike,
@@ -601,18 +616,20 @@ const App = () => {
           console.error("Error fetching interview session details:", err);
           return null;
         });
-        setInterviewSessionDetails(interviewDetails);
-        setResumeText(interviewDetails?.resume?.resume_text || "");
-        setSelectedResumeId(interviewDetails?.resume?.id || null);
-        setSelectedJobId(interviewDetails?.job_description?.id || null);
-        setJobDescriptionText(interviewDetails?.job_description?.description_text || "");
-        console.log("Fetched interview details:", interviewDetails);
-    }
+      setInterviewSessionDetails(interviewDetails);
+      setInterviewId(interviewDetails?.interview?.session_id || null);
+      setResumeText(interviewDetails?.resume?.resume_text || "");
+      setSelectedResumeId(interviewDetails?.resume?.id || null);
+      setSelectedJobId(interviewDetails?.job_description?.id || null);
+      setJobDescriptionText(
+        interviewDetails?.job_description?.description_text || ""
+      );
+      console.log("Fetched interview details:", interviewDetails);
+    };
     getInterviewSessionDetails();
 
     if (sid) {
       setResumeHandle(sid);
-      setInterviewId(intid);
       resumeHandleRef.current = sid;
       // keep current view as interview
       setCurrentView("interview");
@@ -1576,7 +1593,7 @@ const App = () => {
         apiCall("/api/interviews"),
       ]);
       setDatabaseStats(statsData);
-      console.log("Interviews:", interviewsData)
+      console.log("Interviews:", interviewsData);
       setInterviews(interviewsData.interviews || []);
     } catch (err) {
       setError(
@@ -2502,6 +2519,144 @@ const App = () => {
                           </p>
                         </div>
                       </div>
+                      {interview.interviewer_notes
+                        ? (() => {
+                            try {
+                              const parsed = JSON.parse(
+                                interview.interviewer_notes as string
+                              );
+                              if (
+                                parsed &&
+                                typeof parsed === "object" &&
+                                !Array.isArray(parsed)
+                              ) {
+                                return (
+                                  <div className="mb-4">
+                                    <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center">
+                                      <span className="inline-block w-2 h-2 bg-indigo-500 rounded-full mr-2" />
+                                      Interviewer Notes
+                                    </h4>
+                                    <div className="overflow-x-auto rounded-lg border border-slate-100 shadow-sm">
+                                      <table className="w-full min-w-[600px] text-sm divide-y divide-slate-100">
+                                        <thead className="bg-slate-50">
+                                          <tr>
+                                            <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                                              Category
+                                            </th>
+                                            <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                                              Score
+                                            </th>
+                                            <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                                              Reasoning
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="bg-white">
+                                          {Object.entries(parsed).map(
+                                            ([category, value]) => {
+                                              const score =
+                                                value &&
+                                                typeof value === "object" &&
+                                                "score" in value
+                                                  ? (value as any).score
+                                                  : typeof value === "number"
+                                                  ? value
+                                                  : "-";
+                                              const reasoning =
+                                                value &&
+                                                typeof value === "object" &&
+                                                "reasoning" in value
+                                                  ? (value as any).reasoning
+                                                  : typeof value === "string"
+                                                  ? value
+                                                  : JSON.stringify(value);
+
+                                              const scoreNum =
+                                                typeof score === "number"
+                                                  ? Math.max(
+                                                      0,
+                                                      Math.min(
+                                                        10,
+                                                        Number(score)
+                                                      )
+                                                    )
+                                                  : null;
+
+                                              return (
+                                                <tr
+                                                  key={category}
+                                                  className="align-top even:bg-slate-50"
+                                                >
+                                                  <td className="px-4 py-3 align-top text-slate-800 font-medium">
+                                                    {category.replace(
+                                                      /_/g,
+                                                      " "
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3 align-top">
+                                                    {scoreNum !== null ? (
+                                                      <div className="flex items-center space-x-3">
+                                                        <div className="text-slate-800 font-semibold">
+                                                          {scoreNum}/10
+                                                        </div>
+                                                        <div className="w-36 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                                          <div
+                                                            className="h-2 bg-emerald-500"
+                                                            style={{
+                                                              width: `${(
+                                                                (scoreNum /
+                                                                  10) *
+                                                                100
+                                                              ).toFixed(0)}%`,
+                                                            }}
+                                                          />
+                                                        </div>
+                                                      </div>
+                                                    ) : (
+                                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                                                        {String(score)}
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3 align-top text-slate-700 whitespace-pre-wrap">
+                                                    {reasoning}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            }
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              // if parsed isn't an object, just render it prettily
+                              return (
+                                <div className="mb-4">
+                                  <h4 className="text-sm font-semibold text-slate-800 mb-2">
+                                    Interviewer Notes
+                                  </h4>
+                                  <pre className="rounded-md bg-slate-50 p-3 text-sm text-slate-700 whitespace-pre-wrap border border-slate-100 shadow-sm">
+                                    {String(parsed)}
+                                  </pre>
+                                </div>
+                              );
+                            } catch (e) {
+                              // not JSON — render raw text
+                              return (
+                                <div className="mb-4">
+                                  <h4 className="text-sm font-semibold text-slate-800 mb-2">
+                                    Interviewer Notes
+                                  </h4>
+                                  <pre className="rounded-md bg-slate-50 p-3 text-sm text-slate-700 whitespace-pre-wrap border border-slate-100 shadow-sm">
+                                    {interview.interviewer_notes}
+                                  </pre>
+                                </div>
+                              );
+                            }
+                          })()
+                        : null}
                     </div>
 
                     <div className="ml-4 flex space-x-3">
@@ -2861,8 +3016,8 @@ const App = () => {
                 ? `Live (${connectionMode.toUpperCase()})`
                 : status === "connecting"
                 ? `Connecting (${connectionMode.toUpperCase()})`
-                // : "Offline"}
-                : "Interview Not Started"}
+                : // : "Offline"}
+                  "Interview Not Started"}
             </div>
 
             {/* Backend Connection Status */}
@@ -2886,13 +3041,13 @@ const App = () => {
                 }`}
               ></div>
               {connectionStatus === "connected"
-                // ? "API Connected"
-                ? "Connection Healthy"
+                ? // ? "API Connected"
+                  "Connection Healthy"
                 : connectionStatus === "checking"
-                // ? "Checking API..."
-                ? "Checking Connection..."
-                // : "API Offline"}
-                : "Connection Lost"}
+                ? // ? "Checking API..."
+                  "Checking Connection..."
+                : // : "API Offline"}
+                  "Connection Lost"}
             </div>
             {/* Auth controls */}
             {/* {isAuthenticated ? (
@@ -4020,7 +4175,7 @@ const App = () => {
           </div>
 
           <div>
-          {/* <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> */}
+            {/* <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"> */}
             <div className="bg-white rounded-xl p-6 border">
               <h3 className="font-medium mb-3">Scheduled Interviews</h3>
               <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -4060,13 +4215,13 @@ const App = () => {
                         : iv.interview_id}
                     </div>
                     <div className="text-xs text-slate-400 mt-1">
-                      Link: 
-                      <a href={`${window.location.origin}/interview/${iv.session_id}`} className="text-blue-600 hover:underline">
+                      Link:
+                      <a
+                        href={`${window.location.origin}/interview/${iv.session_id}`}
+                        className="text-blue-600 hover:underline"
+                      >
                         {window.location.origin}/interview/{iv.session_id}
                       </a>
-                    </div>
-                    <div className="text-sm">
-                      {iv?.interviewer_notes}
                     </div>
                   </div>
                 ))}
@@ -4338,7 +4493,8 @@ const App = () => {
           {/* Page Header */}
           <div className="text-center">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-blue-800 bg-clip-text text-transparent mb-4">
-              Welcome, {interviewSessionDetails?.resume?.candidate_name} to the interview
+              Welcome, {interviewSessionDetails?.resume?.candidate_name} to the
+              interview
             </h1>
             <p className="text-lg text-slate-600 max-w-2xl mx-auto">
               We wish you the best of luck! Remember to stay calm, think
@@ -4367,7 +4523,7 @@ const App = () => {
                     </svg>
                   </div>
                   <h2 className="text-2xl font-bold text-white">
-                    {interviewSessionDetails?.job_description 
+                    {interviewSessionDetails?.job_description
                       ? interviewSessionDetails.job_description.title
                       : "No Job Selected"}
                     {/* {selectedJobId
@@ -4966,29 +5122,30 @@ const App = () => {
 
               <div className="p-6">
                 <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-                  {(transcriptsFormatted || []).length === 0 ? (
-                    <div className="text-center py-12">
-                      <svg
-                        className="w-16 h-16 text-slate-300 mx-auto mb-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                        />
-                      </svg>
-                      <p className="text-slate-500 font-medium">
-                        No transcripts yet
-                      </p>
-                      <p className="text-sm text-slate-400">
-                        Audio transcripts will appear here
-                      </p>
-                    </div>
-                  ) : (
+                  {/* {(transcriptsFormatted || []).length === 0 ? ( */}
+                  <div className="text-center py-12">
+                    <svg
+                      className="w-16 h-16 text-slate-300 mx-auto mb-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                      />
+                    </svg>
+                    <p className="text-slate-500 font-medium">
+                      No transcripts yet. Currently, live transcription is
+                      disabled.
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      Audio transcripts can be found post interview.
+                    </p>
+                  </div>
+                  {/* ) : (
                     (transcriptsFormatted || []).map((item) => (
                       <div
                         key={item.id}
@@ -5009,7 +5166,7 @@ const App = () => {
                         <p className="text-sm text-slate-900">{item.text}</p>
                       </div>
                     ))
-                  )}
+                  )} */}
                 </div>
               </div>
             </div>

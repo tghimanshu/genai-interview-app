@@ -388,7 +388,6 @@ async def create_interview(interview_data: InterviewCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 @app.get("/api/interview-session/{session_id}")
 async def get_interview_details(session_id: str):
     if not DATABASE_AVAILABLE:
@@ -914,16 +913,6 @@ class WebSocketInterviewSession:
                         f"Successfully connected to Gemini Live API for session {self._session_id}"
                     )
 
-                    await session.send_client_content(
-                        turns={
-                            "role": "user",
-                            "parts": [
-                                {"text": "--SYSTEM-- Candidate Joined the call."}
-                            ],
-                        },
-                        turn_complete=True,
-                    )
-
                     await self.websocket.send_json(
                         {
                             "type": "status",
@@ -932,6 +921,15 @@ class WebSocketInterviewSession:
                             "receiveSampleRate": RECEIVE_SAMPLE_RATE,
                             "resumeHandle": self._resume_handle,
                         }
+                    )
+                    await session.send_client_content(
+                        turns={
+                            "role": "user",
+                            "parts": [
+                                {"text": "--SYSTEM-- Candidate Joined the call."}
+                            ],
+                        },
+                        turn_complete=True,
                     )
 
                     forward_task = asyncio.create_task(self._forward_client_messages())
@@ -1531,6 +1529,23 @@ class WebSocketInterviewSession:
         flush_current()
 
         formatted_text = "\n".join(lines)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents={
+                "role": "user",
+                "parts": [
+                    genai_types.Part.from_text(
+                        text=f"""Transcript the provided transcript to english without changing the meaning.
+                    
+                                               Transcript: ```{formatted_text}```
+                                               
+                                               DO NOT add any additional commentary or information. Just provide the cleaned transcript."""
+                    ),
+                ],
+            },
+        )
+        formatted_text = response.text or formatted_text
+
         formatted_path.write_text(formatted_text, encoding="utf-8")
         logger.info("Formatted transcript written to %s", formatted_path)
 
@@ -1580,23 +1595,41 @@ FORMAT: ```json
 }
 """
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents={
-                    "role": "user",
-                    "parts": [
-                        genai_types.Part.from_text(text=formatted_text),
-                        genai_types.Part.from_text(text=resume_text),
-                        genai_types.Part.from_text(text=jd_text),
-                        genai_types.Part.from_text(text=prompt_context),
-                    ],
-                },
-            )
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents={
+                        "role": "user",
+                        "parts": [
+                            genai_types.Part.from_text(text=formatted_text),
+                            genai_types.Part.from_text(text=resume_text),
+                            genai_types.Part.from_text(text=jd_text),
+                            genai_types.Part.from_text(text=prompt_context),
+                        ],
+                    },
+                )
 
-            my_score = response.text.split("```json")[-1]
-            my_score = my_score.split("```")[0]
+                my_score = response.text.split("```json")[-1]
+                my_score = my_score.split("```")[0]
 
-            score_path.write_text(response.text or "", encoding="utf-8")
+                score_path.write_text(response.text or "", encoding="utf-8")
+            except Exception as genai_exc:
+                logger.warning(
+                    "Failed to generate candidate score from Gemini API: %s",
+                    genai_exc,
+                )
+                with open(score_path, "w", encoding="utf-8") as score_file:
+                    score_file.write(
+                        f"Failed to generate score from Gemini API: {genai_exc}"
+                    )
+                    score_file.write("\n\n")
+                    score_file.write("Session ID: ")
+                    score_file.write(self._session_id)
+                    score_file.write("Prompt Context:\n")
+                    score_file.write(prompt_context)
+                    score_file.write("Formatted Transcript:\n")
+                    score_file.write(formatted_text or "")
+                return
 
             db_ops = InterviewDatabaseOps()
             db_ops.update_interview_using_session_id(
@@ -1604,7 +1637,8 @@ FORMAT: ```json
                 {
                     "interviewer_notes": my_score,
                     "status": "completed",
-                })
+                },
+            )
 
             logger.info("Final evaluation written to %s", score_path)
         except Exception as exc:
